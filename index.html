@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Folio — Writing App</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Mono:wght@300;400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Titlebar -->
+<div id="titlebar">
+  <span class="app-name">Folio</span>
+  <div class="tb-sep"></div>
+  <input id="project-title-input" value="Untitled Project" spellcheck="false">
+  <div class="tb-spacer"></div>
+  <button class="tb-btn" id="btn-search" title="Search (Ctrl+F)">
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="7" cy="7" r="5"/>
+      <path d="m11 11 3 3"/>
+    </svg>
+    Search
+  </button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" id="btn-editor">Editor</button>
+  <button class="tb-btn" id="btn-cork">Corkboard</button>
+  <button class="tb-btn" id="btn-outline">Outline</button>
+  <button class="tb-btn" id="btn-timeline">Timeline</button>  <!-- ADD THIS -->
+  <div class="tb-sep"></div>
+  <button class="tb-btn" id="btn-focus" title="Focus Mode (F11)">Focus</button>
+  <div class="tb-sep"></div>
+  <span id="wordcount-display">0 words</span>
+</div>
+
+<!-- Workspace -->
+<div id="workspace">
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-section-header">
+        Manuscript
+        <button class="sidebar-add-btn" id="add-doc-btn" title="New Document">+</button>
+      </div>
+      <div id="doc-tree"></div>
+    </div>
+    <div class="sidebar-section" style="border-bottom:none;">
+      <div class="sidebar-section-header">
+        Research
+        <button class="sidebar-add-btn" id="add-research-btn" title="New Note">+</button>
+      </div>
+      <div id="research-tree"></div>
+    </div>
+  </div>
+
+  <!-- Editor Area -->
+  <div id="editor-area">
+
+    <!-- Formatting Toolbar -->
+    <div id="editor-toolbar">
+      <select class="fmt-select" id="fmt-block">
+        <option value="p">Paragraph</option>
+        <option value="h1">Heading 1</option>
+        <option value="h2">Heading 2</option>
+        <option value="blockquote">Blockquote</option>
+      </select>
+      <div class="fmt-sep"></div>
+      <button class="fmt-btn" title="Bold" data-cmd="bold"><b>B</b></button>
+      <button class="fmt-btn" title="Italic" data-cmd="italic"><i>I</i></button>
+      <button class="fmt-btn" title="Underline" data-cmd="underline"><u>U</u></button>
+      <button class="fmt-btn" title="Strikethrough" data-cmd="strikeThrough"><s>S</s></button>
+      <div class="fmt-sep"></div>
+      <button class="fmt-btn" title="Bullet List" data-cmd="insertUnorderedList">☰</button>
+      <button class="fmt-btn" title="Numbered List" data-cmd="insertOrderedList">№</button>
+      <div class="fmt-sep"></div>
+      <button class="fmt-btn" title="Align Left" data-cmd="justifyLeft">⇐</button>
+      <button class="fmt-btn" title="Align Center" data-cmd="justifyCenter">↔</button>
+    </div>
+
+    <!-- Editor -->
+    <div id="editor-scroll">
+      <div id="editor-wrap">
+        <input id="doc-title-edit" placeholder="Document Title" spellcheck="false">
+        <div id="doc-subtitle">
+          <span id="sub-date">—</span>
+          <span id="sub-wc">0 words</span>
+        </div>
+        <div id="editor" contenteditable="true" data-placeholder="Begin writing…" spellcheck="true"></div>
+      </div>
+    </div>
+
+    <!-- Corkboard -->
+    <div id="corkboard">
+      <div class="cork-grid" id="cork-grid"></div>
+    </div>
+
+    <!-- ADD THIS -->
+    <div id="outline-view">
+      <div class="outline-wrap" id="outline-list"></div>
+    </div>
+
+    <div id="timeline-view">
+    </div>
+
+  </div><!-- /editor-area -->
+
+  <!-- Inspector -->
+  <div id="inspector">
+    <div class="inspector-section">
+      <div class="inspector-label">Synopsis</div>
+      <textarea class="inspector-textarea" id="synopsis-area" placeholder="Brief description of this section…" rows="4"></textarea>
+    </div>
+    <div class="inspector-section">
+      <div class="inspector-label">Status</div>
+      <select class="status-select" id="status-select">
+        <option value="draft">Draft</option>
+        <option value="revision">In Revision</option>
+        <option value="final">Final</option>
+      </select>
+    </div>
+    <div class="inspector-section">
+      <div class="inspector-label">Word Target</div>
+      <input class="target-input" type="number" id="target-input" placeholder="0" min="0">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+      </div>
+
+    <!-- ADD THIS -->
+    <div class="inspector-section">
+      <div class="inspector-label">Story Date</div>
+      <input class="target-input" type="date" id="story-date">
+    </div>
+    
+    </div>
+    <div class="inspector-section">
+      <div class="inspector-label">Tags</div>
+      <div class="tags-wrap" id="tags-wrap">
+        <input id="tag-input" placeholder="Add tag…">
+      </div>
+    </div>
+    <div class="inspector-section">
+      <div class="inspector-label">Statistics</div>
+      <div class="inspector-row"><span>Words</span><span id="stat-words">0</span></div>
+      <div class="inspector-row"><span>Characters</span><span id="stat-chars">0</span></div>
+      <div class="inspector-row"><span>Paragraphs</span><span id="stat-paras">0</span></div>
+      <div class="inspector-row"><span>Read time</span><span id="stat-read">0 min</span></div>
+    </div>
+    <!-- ADD THIS BELOW: -->
+    <div class="inspector-section">
+      <div class="inspector-label">Mentions</div>
+      <div id="mentions-panel"></div>
+    </div>
+    <div class="inspector-section">
+      <div class="inspector-label">Project Total</div>
+      <div class="inspector-row"><span>All words</span><span id="total-words">0</span></div>
+      <div class="inspector-row"><span>Documents</span><span id="total-docs">0</span></div>
+    </div>
+  </div><!-- /inspector -->
+
+</div><!-- /workspace -->
+
+<!-- Focus mode exit hint -->
+<div id="focus-exit">Press Esc or click to exit focus</div>
+
+<!-- Context Menu -->
+<div id="ctx-menu">
+  <div class="ctx-item" id="ctx-rename">✏️ Rename</div>
+  <div class="ctx-item" id="ctx-duplicate">⧉ Duplicate</div>
+  <div class="ctx-item" id="ctx-add-child">↳ Add Child</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item danger" id="ctx-delete">✕ Delete</div>
+</div>
+
+<!-- Search Overlay -->
+<div id="search-overlay">
+  <div id="search-box">
+    <input id="search-input" placeholder="Search documents…" autocomplete="off">
+    <div id="search-results"></div>
+  </div>
+</div>
+
+<!-- Entity Creator Modal -->
+<div id="entity-overlay">
+  <div id="entity-modal">
+    <div id="entity-modal-header">New Entity</div>
+    <div class="entity-field">
+      <label class="entity-label">Type</label>
+      <select id="entity-type">
+        <option value="character">Character</option>
+        <option value="location">Location</option>
+        <option value="event">Event</option>
+        <option value="object">Object</option>
+      </select>
+    </div>
+    <div class="entity-field">
+      <label class="entity-label">Name</label>
+      <input id="entity-name" type="text" placeholder="e.g. Sarah Ellwood">
+    </div>
+    <div class="entity-field">
+      <label class="entity-label">Aliases</label>
+      <input id="entity-aliases" type="text" placeholder="e.g. Sarah, Ellwood (comma separated)">
+    </div>
+    <div id="entity-modal-footer">
+      <button id="entity-cancel">Cancel</button>
+      <button id="entity-confirm">Create</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
