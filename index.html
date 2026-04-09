@@ -26,9 +26,10 @@
   <button class="tb-btn" id="btn-editor">Editor</button>
   <button class="tb-btn" id="btn-cork">Corkboard</button>
   <button class="tb-btn" id="btn-outline">Outline</button>
-  <button class="tb-btn" id="btn-timeline">Timeline</button>  <!-- ADD THIS -->
+  <button class="tb-btn" id="btn-timeline">Timeline</button>
   <div class="tb-sep"></div>
   <button class="tb-btn" id="btn-focus" title="Focus Mode (F11)">Focus</button>
+  <button class="tb-btn" id="btn-book" title="Book Mode">Book</button>
   <div class="tb-sep"></div>
   <span id="wordcount-display">0 words</span>
 </div>
@@ -81,12 +82,22 @@
     <!-- Editor -->
     <div id="editor-scroll">
       <div id="editor-wrap">
+
+        <!-- Banner -->
+        <div id="doc-banner">
+          <div id="banner-hint">Click to add a banner image</div>
+          <div id="banner-actions">
+            <label id="banner-change">Change banner</label>
+          </div>
+        </div>
+
         <input id="doc-title-edit" placeholder="Document Title" spellcheck="false">
         <div id="doc-subtitle">
           <span id="sub-date">—</span>
           <span id="sub-wc">0 words</span>
         </div>
         <div id="editor" contenteditable="true" data-placeholder="Begin writing…" spellcheck="true"></div>
+
       </div>
     </div>
 
@@ -95,11 +106,12 @@
       <div class="cork-grid" id="cork-grid"></div>
     </div>
 
-    <!-- ADD THIS -->
+    <!-- Outline -->
     <div id="outline-view">
       <div class="outline-wrap" id="outline-list"></div>
     </div>
 
+    <!-- Timeline -->
     <div id="timeline-view">
     </div>
 
@@ -107,10 +119,12 @@
 
   <!-- Inspector -->
   <div id="inspector">
+
     <div class="inspector-section">
       <div class="inspector-label">Synopsis</div>
       <textarea class="inspector-textarea" id="synopsis-area" placeholder="Brief description of this section…" rows="4"></textarea>
     </div>
+
     <div class="inspector-section">
       <div class="inspector-label">Status</div>
       <select class="status-select" id="status-select">
@@ -119,26 +133,27 @@
         <option value="final">Final</option>
       </select>
     </div>
+
     <div class="inspector-section">
       <div class="inspector-label">Word Target</div>
       <input class="target-input" type="number" id="target-input" placeholder="0" min="0">
       <div class="progress-bar">
         <div class="progress-fill" id="progress-fill" style="width:0%"></div>
       </div>
+    </div>
 
-    <!-- ADD THIS -->
     <div class="inspector-section">
       <div class="inspector-label">Story Date</div>
       <input class="target-input" type="date" id="story-date">
     </div>
-    
-    </div>
+
     <div class="inspector-section">
       <div class="inspector-label">Tags</div>
       <div class="tags-wrap" id="tags-wrap">
         <input id="tag-input" placeholder="Add tag…">
       </div>
     </div>
+
     <div class="inspector-section">
       <div class="inspector-label">Statistics</div>
       <div class="inspector-row"><span>Words</span><span id="stat-words">0</span></div>
@@ -146,16 +161,18 @@
       <div class="inspector-row"><span>Paragraphs</span><span id="stat-paras">0</span></div>
       <div class="inspector-row"><span>Read time</span><span id="stat-read">0 min</span></div>
     </div>
-    <!-- ADD THIS BELOW: -->
+
     <div class="inspector-section">
       <div class="inspector-label">Mentions</div>
       <div id="mentions-panel"></div>
     </div>
+
     <div class="inspector-section">
       <div class="inspector-label">Project Total</div>
       <div class="inspector-row"><span>All words</span><span id="total-words">0</span></div>
       <div class="inspector-row"><span>Documents</span><span id="total-docs">0</span></div>
     </div>
+
   </div><!-- /inspector -->
 
 </div><!-- /workspace -->
@@ -177,6 +194,21 @@
   <div id="search-box">
     <input id="search-input" placeholder="Search documents…" autocomplete="off">
     <div id="search-results"></div>
+  </div>
+</div>
+
+<!-- Banner Picker -->
+<div id="banner-overlay">
+  <div id="banner-modal">
+    <div id="banner-modal-header">
+      <span>Choose a Banner</span>
+      <button id="banner-remove">Remove banner</button>
+    </div>
+    <div id="banner-grid"></div>
+    <div id="banner-upload-wrap">
+      <label for="banner-upload" id="banner-upload-btn">Upload your own image</label>
+      <input type="file" id="banner-upload" accept="image/*" style="display:none">
+    </div>
   </div>
 </div>
 
@@ -206,6 +238,86 @@
       <button id="entity-confirm">Create</button>
     </div>
   </div>
+</div>
+
+<!-- Book Mode Overlay -->
+<div id="book-overlay">
+
+  <div id="book-desk"></div>
+  <div id="book-lamp"></div>
+
+  <div id="book-wrap">
+    <div id="book">
+
+      <!-- Left page -->
+      <div class="book-page book-page-left" id="book-left">
+        <div class="book-page-texture"></div>
+        <div class="book-page-inner">
+          <div class="book-page-header">
+            <span class="book-chapter-label" id="book-left-chapter">Chapter One</span>
+            <span class="book-page-num" id="book-left-num">1</span>
+          </div>
+          <div class="book-page-content" id="book-left-content" contenteditable="true" spellcheck="true" style="outline:none;cursor:text;caret-color:#8B6914;"></div>
+          <div class="book-page-footer"><span class="book-ornament">· · ·</span></div>
+        </div>
+      </div>
+
+      <!-- Right page -->
+      <div class="book-page book-page-right" id="book-right">
+        <div class="book-page-texture"></div>
+        <div class="book-page-inner">
+          <div class="book-page-header">
+            <span class="book-chapter-label" id="book-right-chapter">Chapter One</span>
+            <span class="book-page-num" id="book-right-num">2</span>
+          </div>
+          <div
+            id="book-editor"
+            contenteditable="true"
+            spellcheck="true"
+            data-placeholder="Begin writing…"
+          ></div>
+          <div class="book-page-footer"><span class="book-ornament">· · ·</span></div>
+        </div>
+        <div id="book-curl"></div>
+      </div>
+
+      <!-- Spine -->
+      <div id="book-spine"></div>
+
+      <!-- Flip layer -->
+      <div id="book-flip" style="display:none">
+        <div class="book-flip-face book-flip-front">
+          <div class="book-flip-inner">
+            <div class="book-flip-header">
+              <span class="book-chapter-label" id="book-ff-chapter"></span>
+              <span class="book-page-num" id="book-ff-num"></span>
+            </div>
+            <div id="book-ff-content"></div>
+          </div>
+        </div>
+        <div class="book-flip-face book-flip-back">
+          <div class="book-flip-inner">
+            <div class="book-flip-header">
+              <span class="book-chapter-label" id="book-fb-chapter"></span>
+              <span class="book-page-num" id="book-fb-num"></span>
+            </div>
+            <div id="book-fb-content"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div id="book-controls">
+    <button class="book-ctrl-btn" id="book-prev">← Prev</button>
+    <span id="book-spread-label">Pages 1 – 2</span>
+    <button class="book-ctrl-btn" id="book-next">Next →</button>
+    <span id="book-wc">0 words</span>
+    <button class="book-ctrl-btn" id="book-close">Close ✕</button>
+  </div>
+
 </div>
 
 <script src="app.js"></script>

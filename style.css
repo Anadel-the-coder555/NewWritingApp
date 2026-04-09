@@ -932,3 +932,514 @@ body.focus-mode #focus-exit { display: block; }
   color: var(--text-faint);
   margin: 32px 0 12px;
 }
+
+/* ── Banner ── */
+#doc-banner {
+  width: 100%;
+  height: 220px;
+  background: var(--surface2);
+  border-radius: 8px;
+  margin-bottom: 24px;
+  cursor: pointer;
+  position: relative;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+
+#doc-banner:not(.has-banner) {
+  border: 2px dashed var(--border);
+  background-color: var(--surface2);
+}
+
+#doc-banner:not(.has-banner):hover {
+  border-color: var(--text-faint);
+  background-color: var(--surface);
+}
+
+#banner-hint {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-family: 'DM Sans', sans-serif;
+  pointer-events: none;
+}
+
+#doc-banner.has-banner #banner-hint {
+  display: none;
+}
+
+#banner-actions {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  display: none;
+}
+
+#doc-banner.has-banner:hover #banner-actions {
+  display: flex;
+  gap: 8px;
+}
+
+#banner-change {
+  font-size: 11px;
+  font-family: 'DM Sans', sans-serif;
+  background: rgba(26,25,21,0.6);
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 20px;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s;
+}
+
+#banner-change:hover {
+  background: rgba(26,25,21,0.85);
+}
+
+/* ── Banner Picker Modal ── */
+#banner-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(26,25,21,0.5);
+  z-index: 300;
+  align-items: center;
+  justify-content: center;
+}
+
+#banner-overlay.open { display: flex; }
+
+#banner-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 640px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.2);
+}
+
+#banner-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-light);
+  font-family: 'Playfair Display', serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+#banner-remove {
+  font-size: 12px;
+  font-family: 'DM Sans', sans-serif;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+#banner-remove:hover {
+  background: var(--accent-bg);
+}
+
+#banner-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding: 16px 18px;
+}
+
+.banner-option {
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.15s;
+  position: relative;
+}
+
+.banner-option:hover {
+  border-color: var(--accent);
+  transform: scale(1.02);
+}
+
+.banner-option img {
+  width: 100%;
+  height: 90px;
+  object-fit: cover;
+  display: block;
+}
+
+.banner-option-label {
+  font-size: 11px;
+  font-family: 'DM Sans', sans-serif;
+  color: var(--text-muted);
+  padding: 5px 6px;
+  background: var(--surface);
+  text-align: center;
+}
+
+#banner-upload-wrap {
+  padding: 12px 18px 18px;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  justify-content: center;
+}
+
+#banner-upload-btn {
+  font-size: 13px;
+  font-family: 'DM Sans', sans-serif;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 20px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: inline-block;
+}
+
+#banner-upload-btn:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+/* ── Book Mode ── */
+@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap');
+
+#book-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: #1A1510;
+  z-index: 500;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+#book-overlay.open { display: flex; }
+
+#book-desk {
+  position: absolute;
+  inset: 0;
+  background-color: #1A1510;
+  background-image:
+    repeating-linear-gradient(90deg, transparent, transparent 120px, rgba(0,0,0,0.04) 120px, rgba(0,0,0,0.04) 121px),
+    repeating-linear-gradient(0deg,  transparent, transparent  80px, rgba(0,0,0,0.04)  80px, rgba(0,0,0,0.04)  81px);
+}
+
+#book-lamp {
+  position: absolute;
+  top: -100px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 700px;
+  height: 500px;
+  background: radial-gradient(ellipse at 50% 0%,
+    rgba(255,220,140,0.13) 0%,
+    rgba(255,200,100,0.06) 40%,
+    transparent 70%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+#book-wrap {
+  position: relative;
+  z-index: 5;
+  perspective: 2000px;
+  margin-top: 10px;
+}
+
+#book {
+  width: 960px;
+  height: 640px;
+  position: relative;
+  transform-style: preserve-3d;
+  filter: drop-shadow(0 24px 60px rgba(0,0,0,0.95));
+}
+
+.book-page {
+  position: absolute;
+  top: 0;
+  width: 480px;
+  height: 640px;
+  overflow: hidden;
+}
+
+.book-page-left {
+  left: 0;
+  border-radius: 4px 0 0 4px;
+  background: linear-gradient(to right, #EDE8DC, #FDFBF6);
+  box-shadow: inset -6px 0 16px rgba(0,0,0,0.1);
+}
+
+.book-page-right {
+  right: 0;
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(to left, #EDE8DC, #FDFBF6);
+  box-shadow: inset 6px 0 16px rgba(0,0,0,0.1);
+}
+
+.book-page-texture {
+  position: absolute;
+  inset: 0;
+  opacity: 0.03;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+}
+
+.book-page-inner {
+  position: relative;
+  height: 100%;
+  padding: 22px 38px 20px;
+  display: flex;
+  flex-direction: column;
+  z-index: 2;
+}
+
+.book-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 0.5px solid #CECA8A50;
+}
+
+.book-chapter-label {
+  font-family: 'EB Garamond', serif;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #9A9080;
+  font-style: italic;
+}
+
+.book-page-num {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: #B0A898;
+  letter-spacing: 0.1em;
+}
+
+.book-page-content {
+  flex: 1;
+  font-family: 'EB Garamond', serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #2A2520;
+  overflow: hidden;
+}
+
+.book-page-content p {
+  margin-bottom: 0;
+  text-indent: 1.5em;
+}
+
+.book-page-content p:first-child { text-indent: 0; }
+
+.book-page-footer {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 0.5px solid #CECA8A50;
+  display: flex;
+  justify-content: center;
+}
+
+.book-ornament {
+  font-size: 11px;
+  color: #C4B89A;
+  letter-spacing: 0.3em;
+}
+
+/* The writing surface — no box, just ink on paper */
+#book-editor {
+  flex: 1;
+  outline: none;
+  border: none;
+  background: transparent;
+  font-family: 'EB Garamond', serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #2A2520;
+  caret-color: #8B6914;
+  overflow: hidden;
+  cursor: text;
+}
+
+#book-editor:empty::before {
+  content: attr(data-placeholder);
+  color: #C4B89A;
+  font-style: italic;
+  pointer-events: none;
+}
+
+#book-editor p {
+  margin-bottom: 0;
+  text-indent: 1.5em;
+}
+
+#book-editor p:first-child { text-indent: 0; }
+
+#book-spine {
+  position: absolute;
+  left: 479px;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: linear-gradient(to right, #C4B89A, #E8DFC8, #C4B89A);
+  z-index: 10;
+  box-shadow: 0 0 8px rgba(0,0,0,0.4);
+}
+
+/* Page curl hint */
+#book-curl {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 0 32px 32px;
+  border-color: transparent transparent #D4CBBA transparent;
+  opacity: 0.5;
+  cursor: pointer;
+  z-index: 15;
+  transition: all 0.2s;
+}
+
+#book-curl:hover {
+  border-width: 0 0 52px 52px;
+  opacity: 0.85;
+}
+
+/* Flip layer */
+#book-flip {
+  position: absolute;
+  top: 0;
+  width: 480px;
+  height: 640px;
+  transform-style: preserve-3d;
+  z-index: 20;
+  pointer-events: none;
+}
+
+#book-flip.flip-forward {
+  left: 480px;
+  transform-origin: left center;
+  animation: bookFlipForward 0.75s cubic-bezier(0.645,0.045,0.355,1.000) forwards;
+}
+
+#book-flip.flip-backward {
+  left: 0;
+  transform-origin: right center;
+  animation: bookFlipBackward 0.75s cubic-bezier(0.645,0.045,0.355,1.000) forwards;
+}
+
+@keyframes bookFlipForward {
+  0%   { transform: rotateY(0deg);    }
+  100% { transform: rotateY(-180deg); }
+}
+
+@keyframes bookFlipBackward {
+  0%   { transform: rotateY(0deg);   }
+  100% { transform: rotateY(180deg); }
+}
+
+.book-flip-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  overflow: hidden;
+}
+
+.book-flip-front {
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(to left, #EDE8DC, #FDFBF6);
+  box-shadow: inset 6px 0 16px rgba(0,0,0,0.1);
+}
+
+.book-flip-back {
+  border-radius: 4px 0 0 4px;
+  background: linear-gradient(to right, #EDE8DC, #FDFBF6);
+  box-shadow: inset -6px 0 16px rgba(0,0,0,0.1);
+  transform: rotateY(180deg);
+}
+
+.book-flip-inner {
+  padding: 30px 34px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.book-flip-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 0.5px solid #CECA8A50;
+}
+
+.book-flip-inner div {
+  font-family: 'EB Garamond', serif;
+  font-size: 15px;
+  line-height: 1.9;
+  color: #2A2520;
+  overflow: hidden;
+  flex: 1;
+}
+
+/* Controls */
+#book-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+  z-index: 10;
+}
+
+.book-ctrl-btn {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  color: #6B6050;
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+}
+
+.book-ctrl-btn:hover { background: rgba(255,255,255,0.1); color: #C9B99A; }
+
+#book-spread-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: #4A4038;
+  letter-spacing: 0.1em;
+}
+
+#book-wc {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: #3A3028;
+  letter-spacing: 0.06em;
+}

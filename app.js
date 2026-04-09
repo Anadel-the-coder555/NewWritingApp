@@ -4,6 +4,7 @@ let docs = [
     id: 1,
     title: 'Chapter One',
     storyDate: '1943-03-12',
+    banner: '',
     content: '<p>The morning arrived with the kind of stillness that precedes important things. She stood at the window, watching the fog settle into the valley below, feeling that particular mixture of anticipation and dread that she had come to recognize as the sensation of beginnings.</p><p>Three years had passed since she left. Three years of smaller rooms, borrowed daylight, and the slow accumulation of a different kind of life. She had not expected to return.</p>',
     synopsis: 'Opening scene. Establish setting and protagonist.',
     status: 'revision',
@@ -18,6 +19,7 @@ let docs = [
     id: 2,
     title: 'Chapter Two',
     storyDate: '1943-03-15',
+    banner: '',
     content: '<p>The letters arrived in a shoebox — forty-seven of them, each sealed with the kind of careful precision that speaks of restraint. She had discovered them that afternoon in the back of the wardrobe, behind a coat that still held the faint ghost of cedar and old wool.</p>',
     synopsis: 'Discovery of the letters. Inciting incident.',
     status: 'draft',
@@ -32,6 +34,7 @@ let docs = [
     id: 3,
     title: 'Chapter Three',
     storyDate: '',
+    banner: '',
     content: '',
     synopsis: '',
     status: 'draft',
@@ -45,6 +48,7 @@ let docs = [
   {
     id: 4,
     title: 'Research Notes',
+    banner: '',
     content: '<p>Mountain geography of the region: elevation approximately 2,400 feet. Fog patterns common October through March. Local infrastructure — single road in/out, no rail connection until 1962.</p>',
     synopsis: 'Geographic and historical research.',
     status: 'final',
@@ -60,6 +64,7 @@ let docs = [
     title: 'Sarah Ellwood',
     entityType: 'character',
     aliases: ['Sarah', 'Ellwood'],
+    banner: '',
     content: '<p>Sarah Ellwood, 34. Born in the house she returns to. Left after the funeral — her mother\'s — to take a teaching position in the city. Has not spoken to her father in three years.</p><p>Physical: dark hair, sharp angles, moves quickly. Habit of pressing her thumb to her lips when thinking.</p>',
     synopsis: 'Character notes for Sarah.',
     status: 'final',
@@ -154,6 +159,7 @@ function loadDoc(id) {
   document.getElementById('status-select').value   = d.status || 'draft';
   document.getElementById('target-input').value    = d.target || '';
   document.getElementById('story-date').value      = d.storyDate || '';
+  setBanner(d.banner || '');
   document.getElementById('sub-date').textContent  = d.createdAt
     ? d.createdAt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
     : '—';
@@ -176,6 +182,7 @@ function saveCurrentDoc() {
   d.status    = document.getElementById('status-select').value;
   d.target    = +document.getElementById('target-input').value || 0;
   d.storyDate = document.getElementById('story-date').value || '';
+  d.banner    = document.getElementById('doc-banner').dataset.url || '';
 }
 
 /* ────────────────────────────────────────
@@ -296,6 +303,7 @@ function addDoc(section, parentId = null) {
     status: 'draft',
     target: 0,
     storyDate: '',
+    banner: '',
     tags: [],
     parent: parentId,
     isFolder: false,
@@ -350,6 +358,7 @@ function createEntity() {
     status: 'draft',
     target: 0,
     storyDate: '',
+    banner: '',
     tags: [type],
     parent: null,
     isFolder: false,
@@ -495,6 +504,84 @@ function buildTimeline() {
       loadDoc(+el.dataset.id);
     });
   });
+}
+
+/* ────────────────────────────────────────
+   Banner
+──────────────────────────────────────── */
+const BANNER_IMAGES = [
+  { label: 'Fog & Mountains', url: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1200&q=80' },
+  { label: 'Old Library',     url: 'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?w=1200&q=80' },
+  { label: 'Candlelight',     url: 'https://images.unsplash.com/photo-1508193638397-1c4234db14d8?w=1200&q=80' },
+  { label: 'Rainy Window',    url: 'https://images.unsplash.com/photo-1501999635878-71cb5379c2d8?w=1200&q=80' },
+  { label: 'Forest Path',     url: 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=1200&q=80' },
+  { label: 'Old House',       url: 'https://images.unsplash.com/photo-1480074568708-e7b720bb3f09?w=1200&q=80' },
+  { label: 'Winter Field',    url: 'https://images.unsplash.com/photo-1418985991508-e47386d96a71?w=1200&q=80' },
+  { label: 'Stormy Sea',      url: 'https://images.unsplash.com/photo-1505118380757-91f5f5632de0?w=1200&q=80' },
+  { label: 'Autumn Leaves',   url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=1200&q=80' },
+  { label: 'Mountain Lake',   url: 'https://images.unsplash.com/photo-1439853949212-36089c09ee30?w=1200&q=80' },
+  { label: 'Cobblestone',     url: 'https://images.unsplash.com/photo-1467803738586-46b7eb7b16a1?w=1200&q=80' },
+  { label: 'Typewriter',      url: 'https://images.unsplash.com/photo-1455390582262-044cdead277a?w=1200&q=80' },
+];
+
+function setBanner(url) {
+  const banner = document.getElementById('doc-banner');
+  if (!banner) return;
+  if (url) {
+    banner.style.backgroundImage = `url('${url}')`;
+    banner.dataset.url = url;
+    banner.classList.add('has-banner');
+  } else {
+    banner.style.backgroundImage = '';
+    banner.dataset.url = '';
+    banner.classList.remove('has-banner');
+  }
+}
+
+function openBannerPicker() {
+  const grid = document.getElementById('banner-grid');
+  grid.innerHTML = BANNER_IMAGES.map(img => `
+    <div class="banner-option" data-url="${img.url}" title="${img.label}">
+      <img src="${img.url.replace('w=1200', 'w=300')}" alt="${img.label}">
+      <div class="banner-option-label">${img.label}</div>
+    </div>
+  `).join('');
+
+  grid.querySelectorAll('.banner-option').forEach(el => {
+    el.addEventListener('click', () => {
+      const d = docs.find(x => x.id === activeId);
+      if (d) d.banner = el.dataset.url;
+      setBanner(el.dataset.url);
+      closeBannerPicker();
+    });
+  });
+
+  document.getElementById('banner-overlay').classList.add('open');
+}
+
+function closeBannerPicker() {
+  document.getElementById('banner-overlay').classList.remove('open');
+}
+
+function removeBanner() {
+  const d = docs.find(x => x.id === activeId);
+  if (d) d.banner = '';
+  setBanner('');
+  closeBannerPicker();
+}
+
+function handleBannerUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = evt => {
+    const url = evt.target.result;
+    const d = docs.find(x => x.id === activeId);
+    if (d) d.banner = url;
+    setBanner(url);
+    closeBannerPicker();
+  };
+  reader.readAsDataURL(file);
 }
 
 /* ────────────────────────────────────────
@@ -690,6 +777,14 @@ function setupEventListeners() {
     if (e.target === e.currentTarget) closeEntityModal();
   });
 
+  /* Banner */
+  document.getElementById('doc-banner').addEventListener('click', openBannerPicker);
+  document.getElementById('banner-overlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeBannerPicker();
+  });
+  document.getElementById('banner-remove').addEventListener('click', removeBanner);
+  document.getElementById('banner-upload').addEventListener('change', handleBannerUpload);
+
   /* Keyboard shortcuts */
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
@@ -705,6 +800,351 @@ function setupEventListeners() {
       closeSearch();
     }
   });
+
+  /* Book Mode listeners — ADD THESE */
+  document.getElementById('btn-book').addEventListener('click', openBookMode);
+  document.getElementById('book-close').addEventListener('click', closeBookMode);
+  document.getElementById('book-next').addEventListener('click', bookFlipForward);
+  document.getElementById('book-prev').addEventListener('click', bookFlipBackward);
+  document.getElementById('book-curl').addEventListener('click', bookFlipForward);
+  document.getElementById('book-editor').addEventListener('input', bookUpdateWC);
+  document.addEventListener('keydown', e => {
+    if (!document.getElementById('book-overlay').classList.contains('open')) return;
+    if (e.key === 'PageDown') { e.preventDefault(); bookFlipForward(); }
+    if (e.key === 'PageUp')   { e.preventDefault(); bookFlipBackward(); }
+    if (e.key === 'Escape')   { closeBookMode(); }
+  });
+
+  document.getElementById('book-editor').addEventListener('paste', e => {
+  e.preventDefault();
+  const text = e.clipboardData.getData('text/plain');
+  const el = document.getElementById('book-editor');
+  const paras = text.split('\n').filter(p => p.trim().length > 0);
+  paras.forEach(p => {
+    const para = document.createElement('p');
+    para.textContent = p;
+    el.appendChild(para);
+  });
+  setTimeout(() => bookReSplitCurrentPage('right'), 100);
+});
+
+document.getElementById('book-left-content').addEventListener('paste', e => {
+  e.preventDefault();
+  const text = e.clipboardData.getData('text/plain');
+  const el = document.getElementById('book-left-content');
+  const paras = text.split('\n').filter(p => p.trim().length > 0);
+  paras.forEach(p => {
+    const para = document.createElement('p');
+    para.textContent = p;
+    el.appendChild(para);
+  });
+  setTimeout(() => bookReSplitCurrentPage('left'), 100);
+});
+}
+/* ────────────────────────────────────────
+   Book Mode
+──────────────────────────────────────── */
+const BOOK_CHAPTER_LABEL = () => document.getElementById('doc-title-edit').value || 'Untitled';
+const CHARS_PER_PAGE = 2800; // Adjust as needed for page length
+
+let bookPages    = [];
+let bookSpread   = 0;
+let bookFlipping = false;
+
+function openBookMode() {
+  const d = docs.find(x => x.id === activeId);
+  if (!d) return;
+
+  const plain = d.content
+  .replace(/<p[^>]*>/gi, '\n')
+  .replace(/<\/p>/gi, '')
+  .replace(/<br\s*\/?>/gi, '\n')
+  .replace(/<[^>]+>/g, '')
+  .replace(/&nbsp;/gi, ' ')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim();
+
+  bookPages = [];
+  const paras = plain.split('\n').filter(p => p.trim().length > 0);
+  let currentPage = [];
+  let currentLen  = 0;
+
+  paras.forEach(para => {
+    if (currentLen + para.length > CHARS_PER_PAGE && currentPage.length > 0) {
+      bookPages.push(currentPage);
+      currentPage = [];
+      currentLen  = 0;
+    }
+    currentPage.push(para);
+    currentLen += para.length;
+  });
+
+  if (currentPage.length > 0) bookPages.push(currentPage);
+
+  // Title page at front
+  bookPages.unshift([]);
+
+  while (bookPages.length < 2) bookPages.push([]);
+
+  bookSpread   = -1;
+  bookFlipping = false;
+
+  document.getElementById('book-overlay').classList.add('open');
+  bookRenderSpread();
+}
+
+function closeBookMode() {
+  if (bookSpread >= 0) bookSaveBothPages();
+
+  // Skip the title page (index 0) when saving back
+  const allParas = bookPages.slice(1).flat();
+  const html = allParas.map(p => `<p>${p}</p>`).join('');
+
+  const d = docs.find(x => x.id === activeId);
+  if (d) {
+    d.content = html;
+    document.getElementById('editor').innerHTML = html;
+    saveCurrentDoc();
+    updateStats();
+    renderTree();
+  }
+
+  document.getElementById('book-overlay').classList.remove('open');
+}
+
+function bookRenderSpread() {
+  const chapter = BOOK_CHAPTER_LABEL();
+
+  // Title spread
+  if (bookSpread < 0) {
+    document.getElementById('book-left-num').textContent      = '';
+    document.getElementById('book-right-num').textContent     = '';
+    document.getElementById('book-left-chapter').textContent  = '';
+    document.getElementById('book-right-chapter').textContent = '';
+    document.getElementById('book-spread-label').textContent  = 'Title page';
+
+    // Left page — blank
+    const leftEl = document.getElementById('book-left-content');
+    leftEl.contentEditable = 'false';
+    leftEl.style.cursor    = 'default';
+    leftEl.innerHTML       = '';
+
+    // Right page — title
+    const rightEl = document.getElementById('book-editor');
+    rightEl.contentEditable = 'false';
+    rightEl.style.cursor    = 'default';
+    rightEl.innerHTML = `
+      <div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;opacity:0.75;">
+        <div style="font-family:'EB Garamond',serif;font-size:26px;font-weight:600;color:#2A2520;letter-spacing:0.03em;margin-bottom:16px;line-height:1.2;">${chapter}</div>
+        <div style="width:50px;height:1px;background:#C4B89A;margin:0 auto 16px;"></div>
+        <div style="font-family:'DM Mono',monospace;font-size:9px;color:#9A9080;letter-spacing:0.18em;text-transform:uppercase;">Turn the page to begin</div>
+      </div>`;
+
+    bookUpdateWC();
+    return;
+  }
+
+  const leftIdx  = bookSpread * 2;
+  const rightIdx = bookSpread * 2 + 1;
+
+  document.getElementById('book-left-num').textContent      = leftIdx + 1;
+  document.getElementById('book-right-num').textContent     = rightIdx + 1;
+  document.getElementById('book-left-chapter').textContent  = chapter;
+  document.getElementById('book-right-chapter').textContent = chapter;
+  document.getElementById('book-spread-label').textContent  = `Pages ${leftIdx + 1} – ${rightIdx + 1}`;
+
+  // Left page — fully editable
+  const leftEl   = document.getElementById('book-left-content');
+  const leftPage = bookPages[leftIdx] || [];
+  leftEl.contentEditable = 'true';
+  leftEl.style.cursor    = 'text';
+  leftEl.style.outline   = 'none';
+  leftEl.innerHTML = leftPage.length > 0
+    ? leftPage.map((p, i) => `<p style="text-indent:${i === 0 ? '0' : '1.8em'};margin-bottom:0;">${p}</p>`).join('')
+    : '';
+
+  // Right page — fully editable
+  const rightEl   = document.getElementById('book-editor');
+  const rightPage = bookPages[rightIdx] || [];
+  rightEl.contentEditable = 'true';
+  rightEl.style.cursor    = 'text';
+  rightEl.innerHTML = rightPage.length > 0
+    ? rightPage.map((p, i) => `<p style="text-indent:${i === 0 ? '0' : '1.8em'};margin-bottom:0;">${p}</p>`).join('')
+    : '';
+
+  rightEl.focus();
+  bookUpdateWC();
+}
+
+function bookSaveBothPages() {
+  if (bookSpread < 0) return;
+
+  const leftIdx  = bookSpread * 2;
+  const rightIdx = bookSpread * 2 + 1;
+
+  while (bookPages.length <= rightIdx) bookPages.push([]);
+
+  // Save left page
+  const leftEl = document.getElementById('book-left-content');
+  const leftParas = Array.from(leftEl.querySelectorAll('p'))
+    .map(p => p.textContent.trim())
+    .filter(p => p.length > 0);
+  bookPages[leftIdx] = leftParas.length > 0
+    ? leftParas
+    : leftEl.innerText.split('\n').filter(l => l.trim().length > 0);
+
+  // Save right page
+  const rightEl = document.getElementById('book-editor');
+  const rightParas = Array.from(rightEl.querySelectorAll('p'))
+    .map(p => p.textContent.trim())
+    .filter(p => p.length > 0);
+  bookPages[rightIdx] = rightParas.length > 0
+    ? rightParas
+    : rightEl.innerText.split('\n').filter(l => l.trim().length > 0);
+}
+
+function bookUpdateWC() {
+  const allText = bookPages.slice(1).flat().join(' ');
+  const words   = allText.trim().split(/\s+/).filter(w => w.length > 0).length;
+  document.getElementById('book-wc').textContent = words.toLocaleString() + ' words';
+}
+
+function bookReSplitCurrentPage(side) {
+  bookSaveBothPages();
+
+  // Grab all content from current page onward
+  const leftIdx  = bookSpread * 2;
+  const rightIdx = bookSpread * 2 + 1;
+  const idx      = side === 'left' ? leftIdx : rightIdx;
+
+  // Pull all text from the pasted page to the end
+  const remainingPages = bookPages.slice(idx);
+  const allText = remainingPages.flat().join('\n');
+
+  if (allText.length <= CHARS_PER_PAGE) {
+    bookRenderSpread();
+    return;
+  }
+
+  // Resplit all that text into pages
+  const paras = allText.split('\n').filter(p => p.trim().length > 0);
+  const newPages = [];
+  let currentPage = [];
+  let currentLen  = 0;
+
+  paras.forEach(para => {
+    if (currentLen + para.length > CHARS_PER_PAGE && currentPage.length > 0) {
+      newPages.push(currentPage);
+      currentPage = [];
+      currentLen  = 0;
+    }
+    currentPage.push(para);
+    currentLen += para.length;
+  });
+
+  if (currentPage.length > 0) newPages.push(currentPage);
+
+  // Replace from the pasted page onward with the newly split pages
+  bookPages.splice(idx, bookPages.length - idx, ...newPages);
+
+  // Make sure there are always enough pages
+  while (bookPages.length <= rightIdx + 1) bookPages.push([]);
+
+  bookRenderSpread();
+}
+
+function bookFlipForward() {
+  if (bookFlipping) return;
+
+  // Title page — just advance without animation
+  if (bookSpread < 0) {
+    bookSpread = 0;
+    bookRenderSpread();
+    return;
+  }
+
+  bookSaveBothPages();
+
+  const rightIdx     = bookSpread * 2 + 1;
+  const nextRightIdx = rightIdx + 1;
+  while (bookPages.length <= nextRightIdx) bookPages.push([]);
+
+  const chapter = BOOK_CHAPTER_LABEL();
+  const flip    = document.getElementById('book-flip');
+
+  const rightEl = document.getElementById('book-editor');
+  document.getElementById('book-ff-chapter').textContent = chapter;
+  document.getElementById('book-ff-num').textContent     = rightIdx + 1;
+  document.getElementById('book-ff-content').innerHTML   = rightEl.innerHTML;
+
+  document.getElementById('book-fb-chapter').textContent = chapter;
+  document.getElementById('book-fb-num').textContent     = rightIdx + 2;
+  document.getElementById('book-fb-content').innerHTML   =
+    (bookPages[rightIdx + 1] || []).map(p => `<p>${p}</p>`).join('');
+
+  flip.style.display = 'block';
+  flip.className     = '';
+  bookFlipping       = true;
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      flip.classList.add('flip-forward');
+    });
+  });
+
+  setTimeout(() => {
+    flip.style.display = 'none';
+    flip.className     = '';
+    bookFlipping       = false;
+    bookSpread++;
+    bookRenderSpread();
+  }, 760);
+}
+
+function bookFlipBackward() {
+  if (bookFlipping || bookSpread <= -1) return;
+
+  // First spread — go back to title page without animation
+  if (bookSpread === 0) {
+    bookSaveBothPages();
+    bookSpread = -1;
+    bookRenderSpread();
+    return;
+  }
+
+  bookSaveBothPages();
+
+  const leftIdx  = bookSpread * 2;
+  const chapter  = BOOK_CHAPTER_LABEL();
+  const flip     = document.getElementById('book-flip');
+
+  const leftEl = document.getElementById('book-left-content');
+  document.getElementById('book-ff-chapter').textContent = chapter;
+  document.getElementById('book-ff-num').textContent     = leftIdx;
+  document.getElementById('book-ff-content').innerHTML   = leftEl.innerHTML;
+
+  document.getElementById('book-fb-chapter').textContent = chapter;
+  document.getElementById('book-fb-num').textContent     = leftIdx;
+  document.getElementById('book-fb-content').innerHTML   =
+    (bookPages[leftIdx - 1] || []).map(p => `<p>${p}</p>`).join('');
+
+  flip.style.display = 'block';
+  flip.className     = '';
+  bookFlipping       = true;
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      flip.classList.add('flip-backward');
+    });
+  });
+
+  setTimeout(() => {
+    flip.style.display = 'none';
+    flip.className     = '';
+    bookFlipping       = false;
+    bookSpread--;
+    bookRenderSpread();
+  }, 760);
 }
 
 /* ── Start ── */
