@@ -65,7 +65,7 @@ let docs = [
     entityType: 'character',
     aliases: ['Sarah', 'Ellwood'],
     banner: '',
-    content: '<p>Sarah Ellwood, 34. Born in the house she returns to. Left after the funeral — her mother\'s — to take a teaching position in the city. Has not spoken to her father in three years.</p><p>Physical: dark hair, sharp angles, moves quickly. Habit of pressing her thumb to her lips when thinking.</p>',
+    content: '<p>Sarah Ellwood, 34...</p>',
     synopsis: 'Character notes for Sarah.',
     status: 'final',
     target: 0,
@@ -73,8 +73,22 @@ let docs = [
     parent: null,
     isFolder: false,
     section: 'research',
-    createdAt: new Date('2024-01-11')
-  }
+    createdAt: new Date('2024-01-11'),
+    // ADD THESE TWO:
+    charFields: {
+      role: '',
+      goal: '',
+      appearance: 'Dark hair, sharp angles, moves quickly. Habit of pressing her thumb to her lips when thinking.',
+      personality: '',
+      occupation: 'Teacher',
+      habits: '',
+      background: 'Born in the house she returns to. Left after her mother\'s funeral.',
+      internalConflicts: '',
+      externalConflicts: '',
+      notes: ''
+   },
+  charPhotos: []
+},
 ];
 
 let nextId      = 6;
@@ -149,9 +163,14 @@ function reorderDoc(fromId, toId) {
 ──────────────────────────────────────── */
 function loadDoc(id) {
   saveCurrentDoc();
+  saveCharacterView();
   activeId = id;
   const d = docs.find(x => x.id === id);
-  if (!d) return;
+  if (d && d.entityType === 'character') {
+    setMode('characters', true);
+    renderTree();
+    return;
+  }
 
   document.getElementById('doc-title-edit').value = d.title;
   document.getElementById('editor').innerHTML      = d.content || '';
@@ -168,14 +187,17 @@ function loadDoc(id) {
   updateStats();
   renderTree();
 
+  if (currentMode === 'characters') setMode('editor', true);
   if (currentMode === 'cork')     buildCork();
   if (currentMode === 'outline')  buildOutline();
   if (currentMode === 'timeline') buildTimeline();
+  if (currentMode === 'board')    buildBoard();
 }
 
 function saveCurrentDoc() {
   const d = docs.find(x => x.id === activeId);
   if (!d) return;
+  if (d.entityType === 'character') return;
   d.title     = document.getElementById('doc-title-edit').value || 'Untitled';
   d.content   = document.getElementById('editor').innerHTML;
   d.synopsis  = document.getElementById('synopsis-area').value;
@@ -390,15 +412,19 @@ function hideCtx() {
 /* ────────────────────────────────────────
    View Modes
 ──────────────────────────────────────── */
-function setMode(mode) {
+function setMode(mode, skipSave = false) {
   currentMode = mode;
-  saveCurrentDoc();
+  if (!skipSave) {
+    saveCurrentDoc();
+    saveCharacterView();
+  }
 
-  ['editor', 'cork', 'outline', 'timeline'].forEach(m => {
+  ['editor', 'cork', 'outline', 'timeline', 'board'].forEach(m => {
     const btnId = m === 'editor'  ? 'btn-editor'
                 : m === 'cork'    ? 'btn-cork'
                 : m === 'outline' ? 'btn-outline'
-                : 'btn-timeline';
+                : m === 'timeline'? 'btn-timeline'
+                : 'btn-board';
     document.getElementById(btnId).classList.toggle('active', m === mode);
   });
 
@@ -407,10 +433,14 @@ function setMode(mode) {
   document.getElementById('corkboard').className      = mode === 'cork'     ? 'active' : '';
   document.getElementById('outline-view').className   = mode === 'outline'  ? 'active' : '';
   document.getElementById('timeline-view').className  = mode === 'timeline' ? 'active' : '';
+  document.getElementById('character-view').className  = mode === 'characters' ? 'active' : '';
+  document.getElementById('board-view').className     = mode === 'board'    ? 'active' : '';
 
   if (mode === 'cork')     buildCork();
   if (mode === 'outline')  buildOutline();
   if (mode === 'timeline') buildTimeline();
+  if (mode === 'board')    buildBoard();
+  if (mode === 'characters') loadCharacterView();
 }
 
 function buildCork() {
@@ -503,6 +533,337 @@ function buildTimeline() {
       setMode('editor');
       loadDoc(+el.dataset.id);
     });
+  });
+}
+
+/* ────────────────────────────────────────
+   Character Sketch
+──────────────────────────────────────── */
+function loadCharacterView() {
+  const d = docs.find(x => x.id === activeId);
+  if (!d) return;
+  document.getElementById('char-name-edit').value = d.title;
+  const activeTab = document.querySelector('.char-tab.active');
+  const field = activeTab ? activeTab.dataset.field : 'appearance';
+  const label = activeTab ? activeTab.textContent : 'Physical appearance';
+  document.getElementById('char-section-title').textContent = label;
+  document.getElementById('char-field-area').value = (d.charFields || {})[field] || '';
+  (d.charPhotos || []).forEach((url, i) => {
+    const slot = document.getElementById('char-photo-' + i);
+    if (slot && url) slot.style.backgroundImage = `url('${url}')`;
+  });
+  document.querySelectorAll('.char-tab').forEach(tab => {
+    tab.onclick = () => {
+      saveCharacterView();
+      document.querySelectorAll('.char-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('char-section-title').textContent = tab.textContent;
+      const d2 = docs.find(x => x.id === activeId);
+      document.getElementById('char-field-area').value = (d2.charFields || {})[tab.dataset.field] || '';
+    };
+  });
+  document.querySelectorAll('.char-photo-input').forEach((input, i) => {
+    input.onchange = e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = evt => {
+        const d2 = docs.find(x => x.id === activeId);
+        if (!d2.charPhotos) d2.charPhotos = [];
+        d2.charPhotos[i] = evt.target.result;
+        const slot = document.getElementById('char-photo-' + i);
+        slot.style.backgroundImage = `url('${evt.target.result}')`;
+        slot.style.backgroundSize = 'cover';
+        slot.style.backgroundPosition = 'center';
+      };
+      reader.readAsDataURL(file);
+    };
+  });
+}
+
+function saveCharacterView() {
+  const d = docs.find(x => x.id === activeId);
+  if (!d || d.entityType !== 'character') return;
+  const activeTab = document.querySelector('.char-tab.active');
+  if (!activeTab) return;
+  if (!d.charFields) d.charFields = {};
+  d.charFields[activeTab.dataset.field] = document.getElementById('char-field-area').value;
+  d.title = document.getElementById('char-name-edit').value || d.title;
+  renderTree();
+}
+
+/* ────────────────────────────────────────
+   Storyboard Room
+──────────────────────────────────────── */
+let boardPan        = { x: 0, y: 0 };
+let boardShowThread = true;
+let boardPositions  = {};
+let boardIsPanning  = false;
+let boardPanStart   = { x: 0, y: 0 };
+let boardPanOrigin  = { x: 0, y: 0 };
+
+function boardDefaultPositions() {
+  const ms = docs.filter(d => d.section === 'manuscript');
+  ms.forEach((d, i) => {
+    if (!boardPositions[d.id]) {
+      const col = i % 3;
+      const row = Math.floor(i / 3);
+      boardPositions[d.id] = {
+        x: 60 + col * 240,
+        y: 60 + row * 320
+      };
+    }
+  });
+}
+
+let boardEventsAttached = false;
+
+function buildBoard() {
+  boardDefaultPositions();
+
+  const view     = document.getElementById('board-view');
+  const canvasEl = document.getElementById('board-canvas');
+  const threadC  = document.getElementById('board-thread');
+
+  const W = view.offsetWidth  || window.innerWidth;
+  const H = view.offsetHeight || window.innerHeight;
+  threadC.width  = W;
+  threadC.height = H;
+  threadC.style.width  = W + 'px';
+  threadC.style.height = H + 'px';
+
+  canvasEl.innerHTML = '';
+  buildBoardCards(canvasEl);
+  drawBoardThread();
+  drawBoardMinimap();
+
+  if (boardEventsAttached) return;
+  boardEventsAttached = true;
+
+  canvasEl.addEventListener('mousedown', e => {
+    if (e.target !== canvasEl) return;
+    boardIsPanning = true;
+    boardPanStart  = { x: e.clientX, y: e.clientY };
+    boardPanOrigin = { ...boardPan };
+    canvasEl.classList.add('grabbing');
+  });
+
+  window.addEventListener('mousemove', e => {
+    if (!boardIsPanning) return;
+    boardPan.x = boardPanOrigin.x + (e.clientX - boardPanStart.x);
+    boardPan.y = boardPanOrigin.y + (e.clientY - boardPanStart.y);
+    updateBoardCardPositions();
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (boardIsPanning) {
+      boardIsPanning = false;
+      canvasEl.classList.remove('grabbing');
+    }
+  });
+
+  document.getElementById('board-btn-thread').addEventListener('click', function() {
+    boardShowThread = !boardShowThread;
+    this.classList.toggle('active', boardShowThread);
+    drawBoardThread();
+  });
+
+  document.getElementById('board-btn-reset').addEventListener('click', () => {
+    boardPan = { x: 0, y: 0 };
+    updateBoardCardPositions();
+  });
+}
+
+function buildBoardCards(canvasEl) {
+  const ms     = docs.filter(d => d.section === 'manuscript');
+  const dated  = ms.filter(d => d.storyDate).sort((a,b) => new Date(a.storyDate) - new Date(b.storyDate));
+  const undated= ms.filter(d => !d.storyDate);
+  const ordered= [...dated, ...undated];
+
+  ordered.forEach((d, i) => {
+    const el  = document.createElement('div');
+    const pos = boardPositions[d.id];
+    const wc  = countWords(d.content);
+    const num = dated.findIndex(x => x.id === d.id);
+    const numLabel = num >= 0 ? String(num + 1).padStart(2, '0') : '—';
+
+    el.className = 'board-card' + (d.storyDate ? '' : ' undated') +
+                   (d.id === activeId ? ' active' : '');
+    el.dataset.id = d.id;
+    el.style.left = (pos.x + boardPan.x) + 'px';
+    el.style.top  = (pos.y + boardPan.y) + 'px';
+
+    const snippet = d.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+
+    el.innerHTML = `
+      <div class="board-card-header">
+        <span class="board-card-num">${numLabel}</span>
+        <span class="board-card-title">${d.title}</span>
+        <span class="board-card-pin" style="background:${STATUS_COLORS[d.status]}"></span>
+      </div>
+      ${d.banner
+        ? `<img class="board-card-image" src="${d.banner}" draggable="false">`
+        : `<div class="board-card-no-image"><span class="board-card-no-image-text">no banner</span></div>`
+      }
+      <div class="board-card-body">
+        <div class="board-card-date">${d.storyDate ? new Date(d.storyDate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'undated'}</div>
+        <div class="board-card-synopsis">${snippet || '(empty)'}</div>
+      </div>
+      <div class="board-card-footer">
+        <span class="board-card-wc">${wc > 0 ? wc + ' words' : '—'}</span>
+        <span class="board-card-status">${d.status}</span>
+        <span class="board-card-dot" style="background:${STATUS_COLORS[d.status]}"></span>
+      </div>`;
+
+    makeBoardCardDraggable(el, d.id);
+
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      document.querySelectorAll('.board-card').forEach(c => c.classList.remove('active'));
+      el.classList.add('active');
+    });
+
+    el.addEventListener('dblclick', () => {
+      setMode('editor');
+      loadDoc(d.id);
+    });
+
+    canvasEl.appendChild(el);
+  });
+}
+
+function makeBoardCardDraggable(el, id) {
+  let dragging = false;
+  let startX, startY, startPosX, startPosY;
+
+  el.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    dragging  = true;
+    startX    = e.clientX;
+    startY    = e.clientY;
+    startPosX = boardPositions[id].x;
+    startPosY = boardPositions[id].y;
+    el.classList.add('dragging');
+
+    const onMove = e => {
+      if (!dragging) return;
+      boardPositions[id].x = startPosX + (e.clientX - startX);
+      boardPositions[id].y = startPosY + (e.clientY - startY);
+      el.style.left = (boardPositions[id].x + boardPan.x) + 'px';
+      el.style.top  = (boardPositions[id].y + boardPan.y) + 'px';
+      drawBoardThread();
+      drawBoardMinimap();
+    };
+
+    const onUp = () => {
+      dragging = false;
+      el.classList.remove('dragging');
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  });
+}
+
+function updateBoardCardPositions() {
+  document.querySelectorAll('.board-card').forEach(el => {
+    const id  = +el.dataset.id;
+    const pos = boardPositions[id];
+    if (!pos) return;
+    el.style.left = (pos.x + boardPan.x) + 'px';
+    el.style.top  = (pos.y + boardPan.y) + 'px';
+  });
+  drawBoardThread();
+  drawBoardMinimap();
+}
+
+function getBoardCardCenter(id) {
+  const pos = boardPositions[id];
+  if (!pos) return null;
+  return {
+    x: pos.x + boardPan.x + 100,
+    y: pos.y + boardPan.y + 80
+  };
+}
+
+function drawBoardThread() {
+  const threadC = document.getElementById('board-thread');
+  if (!threadC) return;
+  const ctx = threadC.getContext('2d');
+  ctx.clearRect(0, 0, threadC.width, threadC.height);
+  if (!boardShowThread) return;
+
+  const dated = docs
+    .filter(d => d.section === 'manuscript' && d.storyDate)
+    .sort((a, b) => new Date(a.storyDate) - new Date(b.storyDate));
+
+  for (let i = 0; i < dated.length - 1; i++) {
+    const a = getBoardCardCenter(dated[i].id);
+    const b = getBoardCardCenter(dated[i + 1].id);
+    if (!a || !b) continue;
+
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2 + 20;
+
+    // Thick shadow thread
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.quadraticCurveTo(mx, my, b.x, b.y);
+    ctx.strokeStyle = 'rgba(160,40,20,0.2)';
+    ctx.lineWidth   = 5;
+    ctx.lineCap     = 'round';
+    ctx.stroke();
+
+    // Main thread
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.quadraticCurveTo(mx, my, b.x, b.y);
+    ctx.strokeStyle = 'rgba(201,70,42,0.75)';
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([5, 7]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Pin dots
+    [a, b].forEach(pt => {
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#C9462A';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 2, 0, Math.PI * 2);
+      ctx.fillStyle = '#F5F2ED';
+      ctx.fill();
+    });
+  }
+}
+
+function drawBoardMinimap() {
+  const mmC  = document.getElementById('board-mm-canvas');
+  const view = document.getElementById('board-view');
+  if (!mmC || !view) return;
+
+  const ctx   = mmC.getContext('2d');
+  const W     = view.offsetWidth  || 600;
+  const H     = view.offsetHeight || 400;
+  const scaleX = 110 / W;
+  const scaleY = 70  / H;
+
+  ctx.fillStyle = '#0A0908';
+  ctx.fillRect(0, 0, 110, 70);
+
+  docs.filter(d => d.section === 'manuscript').forEach(d => {
+    const pos = boardPositions[d.id];
+    if (!pos) return;
+    const mx = (pos.x + boardPan.x) * scaleX;
+    const my = (pos.y + boardPan.y) * scaleY;
+    ctx.fillStyle  = STATUS_COLORS[d.status];
+    ctx.globalAlpha = d.storyDate ? 0.85 : 0.3;
+    ctx.fillRect(mx, my, 10, 6);
+    ctx.globalAlpha = 1;
   });
 }
 
@@ -717,6 +1078,7 @@ function setupEventListeners() {
   document.getElementById('btn-cork').addEventListener('click',     () => setMode('cork'));
   document.getElementById('btn-outline').addEventListener('click',  () => setMode('outline'));
   document.getElementById('btn-timeline').addEventListener('click', () => setMode('timeline'));
+  document.getElementById('btn-board').addEventListener('click', () => setMode('board'));
 
   /* Focus */
   document.getElementById('btn-focus').addEventListener('click', toggleFocus);
@@ -735,7 +1097,8 @@ function setupEventListeners() {
   document.getElementById('ctx-rename').addEventListener('click', () => {
     hideCtx();
     loadDoc(ctxTargetId);
-    const ti = document.getElementById('doc-title-edit');
+    const target = docs.find(d => d.id === ctxTargetId);
+    const ti = document.getElementById(target && target.entityType === 'character' ? 'char-name-edit' : 'doc-title-edit');
     ti.focus();
     ti.select();
   });
@@ -744,7 +1107,7 @@ function setupEventListeners() {
     hideCtx();
     const src = docs.find(d => d.id === ctxTargetId);
     if (!src) return;
-    const copy = { ...src, id: nextId++, title: src.title + ' (copy)', createdAt: new Date() };
+    const copy = { ...structuredClone(src), id: nextId++, title: src.title + ' (copy)', createdAt: new Date() };
     docs.splice(docs.indexOf(src) + 1, 0, copy);
     renderTree();
     loadDoc(copy.id);

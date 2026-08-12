@@ -1443,3 +1443,354 @@ body.focus-mode #focus-exit { display: block; }
   color: #3A3028;
   letter-spacing: 0.06em;
 }
+/* ── Storyboard Room ── */
+#board-view {
+  display: none;
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #1C1A17;
+  background-image: radial-gradient(circle, #2A2820 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+#board-view.active { display: flex; }
+
+#board-thread {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+#board-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  cursor: grab;
+}
+
+#board-canvas.grabbing { cursor: grabbing; }
+
+/* Board toolbar */
+#board-toolbar {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 20;
+  background: rgba(14,12,10,0.88);
+  border: 1px solid #2A2820;
+  border-radius: 20px;
+  padding: 5px 14px;
+  white-space: nowrap;
+}
+
+.board-tb-btn {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: #6B6750;
+  background: transparent;
+  border: 1px solid #2A2820;
+  border-radius: 10px;
+  padding: 3px 10px;
+  cursor: pointer;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: all 0.15s;
+}
+
+.board-tb-btn:hover  { background: #2A2820; color: #C9B99A; }
+.board-tb-btn.active { background: #C9462A; color: #fff; border-color: #C9462A; }
+
+.board-tb-sep {
+  width: 1px;
+  height: 14px;
+  background: #2A2820;
+  flex-shrink: 0;
+}
+
+#board-hint {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: #3A3830;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Minimap */
+#board-minimap {
+  position: absolute;
+  bottom: 14px;
+  right: 14px;
+  width: 110px;
+  height: 70px;
+  background: rgba(10,9,7,0.85);
+  border: 1px solid #2A2820;
+  border-radius: 4px;
+  z-index: 20;
+  overflow: hidden;
+}
+
+/* Board cards */
+.board-card {
+  position: absolute;
+  width: 200px;
+  background: #F5F2ED;
+  border-radius: 3px;
+  overflow: hidden;
+  cursor: grab;
+  z-index: 5;
+  box-shadow: 3px 4px 14px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.3);
+  transition: box-shadow 0.2s;
+}
+
+.board-card:hover {
+  box-shadow: 5px 8px 28px rgba(0,0,0,0.75), 0 0 0 1px rgba(0,0,0,0.4);
+  z-index: 10;
+}
+
+.board-card.dragging {
+  cursor: grabbing;
+  z-index: 20;
+  box-shadow: 8px 14px 40px rgba(0,0,0,0.9);
+}
+
+.board-card.active {
+  z-index: 15;
+  outline: 2px solid #C9462A;
+  outline-offset: 2px;
+}
+
+.board-card.undated { opacity: 0.5; filter: grayscale(50%); }
+
+.board-card-header {
+  background: #1A1915;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.board-card-num {
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  color: #4A4840;
+  letter-spacing: 0.08em;
+  flex-shrink: 0;
+}
+
+.board-card-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 11px;
+  color: #C9B99A;
+  font-weight: 600;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.board-card-pin {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.board-card-image {
+  width: 100%;
+  height: 100px;
+  object-fit: cover;
+  display: block;
+  filter: brightness(0.85);
+}
+
+.board-card-no-image {
+  width: 100%;
+  height: 100px;
+  background: #E8E4DC;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.board-card-no-image-text {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: #B0ADA5;
+  letter-spacing: 0.08em;
+}
+
+.board-card-body {
+  padding: 8px 10px;
+}
+
+.board-card-date {
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  color: #B0ADA5;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.board-card-synopsis {
+  font-size: 10px;
+  color: #5A5748;
+  line-height: 1.5;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.board-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px 8px;
+  border-top: 1px solid #E8E4DE;
+}
+
+.board-card-wc {
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  color: #B0ADA5;
+  flex: 1;
+}
+
+.board-card-status {
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  color: #B0ADA5;
+  letter-spacing: 0.04em;
+}
+
+.board-card-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Character Sketch ── */
+#character-view {
+  display: none;
+  flex: 1;
+  overflow-y: auto;
+  padding: 40px;
+  gap: 32px;
+  background: var(--bg);
+}
+
+#character-view.active { display: flex; }
+
+#char-photo-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 180px;
+  flex-shrink: 0;
+}
+
+.char-photo-slot {
+  width: 100%;
+  height: 180px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-family: 'DM Sans', sans-serif;
+  background-color: var(--surface);
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+}
+
+#char-photo-1 { height: 110px; }
+
+.char-photo-slot input.char-photo-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+#char-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: 620px;
+  min-width: 0;
+}
+
+#char-name-edit {
+  font-family: 'Playfair Display', serif;
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text);
+  border: none;
+  background: transparent;
+  outline: none;
+  width: 100%;
+  letter-spacing: -0.02em;
+}
+
+#char-section-title {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-top: 24px;
+  margin-bottom: 10px;
+}
+
+#char-field-area {
+  flex: 1;
+  min-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  line-height: 1.7;
+  padding: 16px;
+  resize: none;
+  outline: none;
+}
+
+#char-field-area:focus { border-color: var(--text-muted); }
+
+#char-tab-col {
+  width: 140px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.char-tab {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.char-tab:hover { background: var(--surface2); }
+
+.char-tab.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 500;
+}

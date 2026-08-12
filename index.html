@@ -27,6 +27,7 @@
   <button class="tb-btn" id="btn-cork">Corkboard</button>
   <button class="tb-btn" id="btn-outline">Outline</button>
   <button class="tb-btn" id="btn-timeline">Timeline</button>
+  <button class="tb-btn" id="btn-board">Board</button>
   <div class="tb-sep"></div>
   <button class="tb-btn" id="btn-focus" title="Focus Mode (F11)">Focus</button>
   <button class="tb-btn" id="btn-book" title="Book Mode">Book</button>
@@ -113,6 +114,52 @@
 
     <!-- Timeline -->
     <div id="timeline-view">
+    </div>
+
+    <!-- Storyboard Room -->
+    <div id="board-view">
+      <canvas id="board-thread"></canvas>
+      <div id="board-canvas"></div>
+      <div id="board-toolbar">
+        <button class="board-tb-btn active" id="board-btn-thread">Red thread</button>
+        <button class="board-tb-btn" id="board-btn-reset">Reset view</button>
+        <span class="board-tb-sep"></span>
+        <span id="board-hint">Drag cards · Pan canvas · Click to edit</span>
+      </div>
+      <div id="board-minimap">
+        <canvas id="board-mm-canvas" width="110" height="70"></canvas>
+      </div>
+    </div>
+
+    <!-- Character Sketch -->
+    <div id="character-view">
+      <div id="char-photo-col">
+        <div class="char-photo-slot" id="char-photo-0">
+          <input type="file" accept="image/*" class="char-photo-input">
+          <span>Add photo</span>
+        </div>
+        <div class="char-photo-slot" id="char-photo-1">
+          <input type="file" accept="image/*" class="char-photo-input">
+          <span>Add mood / inspo</span>
+        </div>
+      </div>
+      <div id="char-main">
+        <input id="char-name-edit" placeholder="Character name" spellcheck="false">
+        <div id="char-section-title">Physical appearance</div>
+        <textarea id="char-field-area" placeholder="Describe your character…"></textarea>
+      </div>
+      <div id="char-tab-col">
+        <div class="char-tab active" data-field="appearance">Physical</div>
+        <div class="char-tab" data-field="role">Role</div>
+        <div class="char-tab" data-field="goal">Goal</div>
+        <div class="char-tab" data-field="personality">Personality</div>
+        <div class="char-tab" data-field="occupation">Occupation</div>
+        <div class="char-tab" data-field="habits">Habits</div>
+        <div class="char-tab" data-field="background">Background</div>
+        <div class="char-tab" data-field="internalConflicts">Internal</div>
+        <div class="char-tab" data-field="externalConflicts">External</div>
+        <div class="char-tab" data-field="notes">Notes</div>
+      </div>
     </div>
 
   </div><!-- /editor-area -->
