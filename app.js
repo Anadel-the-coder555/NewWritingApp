@@ -1225,9 +1225,6 @@ function openBookMode() {
 
   if (currentPage.length > 0) bookPages.push(currentPage);
 
-  // Title page at front
-  bookPages.unshift([]);
-
   while (bookPages.length < 2) bookPages.push([]);
 
   bookSpread   = -1;
@@ -1240,8 +1237,7 @@ function openBookMode() {
 function closeBookMode() {
   if (bookSpread >= 0) bookSaveBothPages();
 
-  // Skip the title page (index 0) when saving back
-  const allParas = bookPages.slice(1).flat();
+  const allParas = bookPages.flat();
   const html = allParas.map(p => `<p>${p}</p>`).join('');
 
   const d = docs.find(x => x.id === activeId);
@@ -1348,7 +1344,7 @@ function bookSaveBothPages() {
 }
 
 function bookUpdateWC() {
-  const allText = bookPages.slice(1).flat().join(' ');
+  const allText = bookPages.flat().join(' ');
   const words   = allText.trim().split(/\s+/).filter(w => w.length > 0).length;
   document.getElementById('book-wc').textContent = words.toLocaleString() + ' words';
 }
