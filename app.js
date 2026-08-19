@@ -2,37 +2,7 @@
 let docs = [
   {
     id: 1,
-    title: 'Chapter One',
-    storyDate: '1943-03-12',
-    banner: '',
-    content: '<p>The morning arrived with the kind of stillness that precedes important things. She stood at the window, watching the fog settle into the valley below, feeling that particular mixture of anticipation and dread that she had come to recognize as the sensation of beginnings.</p><p>Three years had passed since she left. Three years of smaller rooms, borrowed daylight, and the slow accumulation of a different kind of life. She had not expected to return.</p>',
-    synopsis: 'Opening scene. Establish setting and protagonist.',
-    status: 'revision',
-    target: 800,
-    tags: ['POV: Sarah', 'Setting: Mountain house'],
-    parent: null,
-    isFolder: false,
-    section: 'manuscript',
-    createdAt: new Date('2024-01-15')
-  },
-  {
-    id: 2,
-    title: 'Chapter Two',
-    storyDate: '1943-03-15',
-    banner: '',
-    content: '<p>The letters arrived in a shoebox — forty-seven of them, each sealed with the kind of careful precision that speaks of restraint. She had discovered them that afternoon in the back of the wardrobe, behind a coat that still held the faint ghost of cedar and old wool.</p>',
-    synopsis: 'Discovery of the letters. Inciting incident.',
-    status: 'draft',
-    target: 1000,
-    tags: ['Letters', 'Mystery'],
-    parent: null,
-    isFolder: false,
-    section: 'manuscript',
-    createdAt: new Date('2024-01-18')
-  },
-  {
-    id: 3,
-    title: 'Chapter Three',
+    title: 'Untitled',
     storyDate: '',
     banner: '',
     content: '',
@@ -43,55 +13,11 @@ let docs = [
     parent: null,
     isFolder: false,
     section: 'manuscript',
-    createdAt: new Date('2024-01-20')
-  },
-  {
-    id: 4,
-    title: 'Research Notes',
-    banner: '',
-    content: '<p>Mountain geography of the region: elevation approximately 2,400 feet. Fog patterns common October through March. Local infrastructure — single road in/out, no rail connection until 1962.</p>',
-    synopsis: 'Geographic and historical research.',
-    status: 'final',
-    target: 0,
-    tags: ['Research'],
-    parent: null,
-    isFolder: false,
-    section: 'research',
-    createdAt: new Date('2024-01-10')
-  },
-  {
-    id: 5,
-    title: 'Sarah Ellwood',
-    entityType: 'character',
-    aliases: ['Sarah', 'Ellwood'],
-    banner: '',
-    content: '<p>Sarah Ellwood, 34...</p>',
-    synopsis: 'Character notes for Sarah.',
-    status: 'final',
-    target: 0,
-    tags: ['Character'],
-    parent: null,
-    isFolder: false,
-    section: 'research',
-    createdAt: new Date('2024-01-11'),
-    // ADD THESE TWO:
-    charFields: {
-      role: '',
-      goal: '',
-      appearance: 'Dark hair, sharp angles, moves quickly. Habit of pressing her thumb to her lips when thinking.',
-      personality: '',
-      occupation: 'Teacher',
-      habits: '',
-      background: 'Born in the house she returns to. Left after her mother\'s funeral.',
-      internalConflicts: '',
-      externalConflicts: '',
-      notes: ''
-   },
-  charPhotos: []
-},
+    createdAt: new Date()
+  }
 ];
 
-let nextId      = 6;
+let nextId      = 2;
 let activeId    = 1;
 let ctxTargetId = null;
 let currentMode = 'editor';
@@ -100,14 +26,60 @@ let saveTimer   = null;
 const STATUS_COLORS = { draft: '#B0ADA5', revision: '#E6A820', final: '#4CAF50' };
 
 /* ────────────────────────────────────────
+   Local Storage Persistence
+──────────────────────────────────────── */
+const STORAGE_KEY = 'folio-project';
+let persistTimer = null;
+
+function persistState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ docs, nextId, activeId }));
+  } catch (e) {
+    console.error('Could not save project to local storage', e);
+  }
+}
+
+function schedulePersist() {
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(persistState, 300);
+}
+
+function loadPersistedState() {
+  let raw;
+  try {
+    raw = localStorage.getItem(STORAGE_KEY);
+  } catch (e) {
+    return false;
+  }
+  if (!raw) return false;
+  try {
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data.docs) || !data.docs.length) return false;
+    docs = data.docs.map(d => ({ ...d, createdAt: d.createdAt ? new Date(d.createdAt) : new Date() }));
+    nextId = typeof data.nextId === 'number' ? data.nextId : Math.max(...docs.map(d => d.id)) + 1;
+    activeId = docs.some(d => d.id === data.activeId) ? data.activeId : docs[0].id;
+    return true;
+  } catch (e) {
+    console.error('Could not load saved project', e);
+    return false;
+  }
+}
+
+/* ────────────────────────────────────────
    Init
 ──────────────────────────────────────── */
 function init() {
+  loadPersistedState();
   renderTree();
   loadDoc(activeId);
   updateTotals();
   setupEventListeners();
   document.getElementById('btn-editor').classList.add('active');
+  window.addEventListener('beforeunload', () => {
+    saveCurrentDoc();
+    saveCharacterView();
+    persistState();
+  });
 }
 
 /* ────────────────────────────────────────
@@ -119,6 +91,7 @@ function renderTree() {
   document.getElementById('doc-tree').innerHTML      = manuscript.map(docItemHTML).join('');
   document.getElementById('research-tree').innerHTML = research.map(docItemHTML).join('');
   attachTreeEvents();
+  schedulePersist();
 }
 
 function docItemHTML(d) {
@@ -162,8 +135,10 @@ function reorderDoc(fromId, toId) {
    Load / Save
 ──────────────────────────────────────── */
 function loadDoc(id) {
-  saveCurrentDoc();
-  saveCharacterView();
+  if (id !== activeId) {
+    saveCurrentDoc();
+    saveCharacterView();
+  }
   activeId = id;
   const d = docs.find(x => x.id === id);
   if (d && d.entityType === 'character') {
@@ -205,6 +180,7 @@ function saveCurrentDoc() {
   d.target    = +document.getElementById('target-input').value || 0;
   d.storyDate = document.getElementById('story-date').value || '';
   d.banner    = document.getElementById('doc-banner').dataset.url || '';
+  schedulePersist();
 }
 
 /* ────────────────────────────────────────
@@ -311,6 +287,7 @@ function removeTag(t) {
   if (!d) return;
   d.tags = (d.tags || []).filter(x => x !== t);
   renderTags(d);
+  schedulePersist();
 }
 
 /* ────────────────────────────────────────
@@ -575,6 +552,7 @@ function loadCharacterView() {
         slot.style.backgroundImage = `url('${evt.target.result}')`;
         slot.style.backgroundSize = 'cover';
         slot.style.backgroundPosition = 'center';
+        schedulePersist();
       };
       reader.readAsDataURL(file);
     };
@@ -914,6 +892,7 @@ function openBannerPicker() {
       if (d) d.banner = el.dataset.url;
       setBanner(el.dataset.url);
       closeBannerPicker();
+      schedulePersist();
     });
   });
 
@@ -929,6 +908,7 @@ function removeBanner() {
   if (d) d.banner = '';
   setBanner('');
   closeBannerPicker();
+  schedulePersist();
 }
 
 function handleBannerUpload(e) {
@@ -941,6 +921,7 @@ function handleBannerUpload(e) {
     if (d) d.banner = url;
     setBanner(url);
     closeBannerPicker();
+    schedulePersist();
   };
   reader.readAsDataURL(file);
 }
@@ -1042,7 +1023,7 @@ function setupEventListeners() {
   /* Inspector inputs */
   document.getElementById('synopsis-area').addEventListener('input', () => {
     const d = docs.find(x => x.id === activeId);
-    if (d) d.synopsis = document.getElementById('synopsis-area').value;
+    if (d) { d.synopsis = document.getElementById('synopsis-area').value; schedulePersist(); }
   });
 
   document.getElementById('status-select').addEventListener('change', function() {
@@ -1054,7 +1035,7 @@ function setupEventListeners() {
 
   document.getElementById('story-date').addEventListener('change', function() {
     const d = docs.find(x => x.id === activeId);
-    if (d) d.storyDate = this.value;
+    if (d) { d.storyDate = this.value; schedulePersist(); }
   });
 
   /* Tag input */
@@ -1064,7 +1045,7 @@ function setupEventListeners() {
       const val = e.target.value.trim().replace(/,/g, '');
       if (!val) return;
       const d = docs.find(x => x.id === activeId);
-      if (d && !d.tags.includes(val)) { d.tags.push(val); renderTags(d); }
+      if (d && !d.tags.includes(val)) { d.tags.push(val); renderTags(d); schedulePersist(); }
       e.target.value = '';
     }
   });
