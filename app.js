@@ -208,6 +208,7 @@ function loadDoc(id) {
 
   document.getElementById('doc-title-edit').value = d.title;
   document.getElementById('editor').innerHTML      = d.content || '';
+  prepareAnnotationMarks();
   document.getElementById('editor').style.fontFamily = d.font || DEFAULT_FONT;
   document.getElementById('fmt-font').value         = d.font || DEFAULT_FONT;
   document.getElementById('synopsis-area').value   = d.synopsis || '';
@@ -1187,6 +1188,8 @@ function toggleBeats() {
 function setTypewriterMode(on = !typewriterMode) {
   typewriterMode = on;
   document.body.classList.toggle('typewriter-mode', on);
+  if (on) requestAnimationFrame(centerCurrentLine);
+  else document.querySelectorAll('#editor .current-line, #editor.current-line').forEach(el => el.classList.remove('current-line'));
   updateOptionChecks();
   updateModeButtons();
   schedulePersist();
@@ -1197,14 +1200,19 @@ function centerCurrentLine() {
   const selection = window.getSelection();
   const node = selection && selection.anchorNode;
   const element = node && (node.nodeType === 1 ? node : node.parentElement);
-  const block = element && element.closest('#editor > *');
-  document.querySelectorAll('#editor > .current-line').forEach(el => el.classList.remove('current-line'));
+  const editor = document.getElementById('editor');
+  if (!element || !editor.contains(element)) return;
+  const block = element === editor ? editor : element.closest('#editor > *');
+  document.querySelectorAll('#editor > .current-line, #editor.current-line').forEach(el => el.classList.remove('current-line'));
   if (block) { block.classList.add('current-line'); block.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
 }
 
 function toggleProofing() {
   proofingMode = !proofingMode;
   document.body.classList.toggle('proofing-mode', proofingMode);
+  const editor = document.getElementById('editor');
+  editor.spellcheck = true;
+  if (proofingMode) editor.focus();
   updateOptionChecks();
   updateModeButtons();
   schedulePersist();
@@ -1251,24 +1259,21 @@ function compareLastSnapshot() {
   alert(`Since ${new Date(snap.createdAt).toLocaleString()}: ${delta >= 0 ? '+' : ''}${delta.toLocaleString()} words (${currentWords.toLocaleString()} total).`);
 }
 
-function addNote() {
-  const text = prompt('Margin note');
-  if (!text || !text.trim()) return;
+function renderNotes() {
+  const notepad = document.getElementById('document-notepad');
+  const textArea = document.getElementById('notepad-text');
+  if (!notepad || !textArea) return;
   const d = docs.find(x => x.id === activeId);
   if (!d) return;
-  d.notes = d.notes || [];
-  const selection = window.getSelection();
-  d.notes.unshift({ id: Date.now(), text: text.trim(), anchor: selection ? selection.toString().slice(0, 80) : '', createdAt: new Date().toISOString() });
-  renderNotes(); renderMarginNotes(); schedulePersist();
-}
-
-function renderNotes() {
-  const list = document.getElementById('notes-list');
-  if (!list) return;
-  const d = docs.find(x => x.id === activeId);
-  const notes = d && d.notes ? d.notes : [];
-  list.innerHTML = notes.length ? notes.map(n => `<div class="note-item" data-id="${n.id}"><button title="Delete note">×</button><span>${escapeHTML(n.text)}</span>${n.anchor ? `<em>on “${escapeHTML(n.anchor)}”</em>` : ''}<small>${new Date(n.createdAt).toLocaleString()}</small></div>`).join('') : '<div class="panel-empty">No margin notes yet.</div>';
-  list.querySelectorAll('.note-item > button').forEach(btn => btn.addEventListener('click', () => { d.notes = d.notes.filter(n => n.id !== +btn.parentElement.dataset.id); renderNotes(); renderMarginNotes(); schedulePersist(); }));
+  if (typeof d.documentNote !== 'string') {
+    const legacyNotes = (d.notes || []).filter(n => !n.anchor && n.kind !== 'annotation');
+    d.documentNote = legacyNotes.map(n => n.text).join('\n\n');
+    d.notes = (d.notes || []).filter(n => n.anchor || n.kind === 'annotation');
+  }
+  textArea.value = d.documentNote;
+  const lined = d.notepadLined !== false;
+  notepad.classList.toggle('lined', lined);
+  document.getElementById('notepad-lines').textContent = lined ? 'No lines' : 'Show lines';
   renderNotesSummary();
 }
 
@@ -1276,9 +1281,10 @@ function renderNotesSummary() {
   const button = document.getElementById('doc-notes-summary');
   if (!button) return;
   const d = docs.find(x => x.id === activeId);
-  const notes = d && d.notes ? d.notes : [];
-  button.hidden = notes.length === 0;
-  button.textContent = `${notes.length} margin note${notes.length === 1 ? '' : 's'} · read ${notes.length === 1 ? 'it' : 'them'}`;
+  const text = d && d.documentNote ? d.documentNote.trim() : '';
+  const words = countWords(text);
+  button.hidden = !text;
+  button.textContent = `Document notepad · ${words} word${words === 1 ? '' : 's'}`;
 }
 
 function updateStatusControls(status) {
@@ -1313,17 +1319,75 @@ function annotateSelection() {
     return;
   }
   const anchor = selection.toString().slice(0, 120);
-  const range = selection.getRangeAt(0);
+  const range = selection.getRangeAt(0).cloneRange();
+  const text = prompt(`Annotation on “${anchor}”`);
+  if (!text || !text.trim()) return;
+  const id = Date.now();
   const mark = document.createElement('span');
   mark.className = 'annotation';
-  try { range.surroundContents(mark); } catch { document.execCommand('hiliteColor', false, 'transparent'); }
-  const text = prompt('Note for this annotation');
+  mark.dataset.annotationId = id;
+  mark.contentEditable = 'false';
+  try { range.surroundContents(mark); } catch { alert('Select text within a single paragraph to annotate it.'); return; }
+  const boundary = document.createElement('span');
+  boundary.className = 'annotation-boundary';
+  boundary.setAttribute('aria-hidden', 'true');
+  boundary.contentEditable = 'false';
+  mark.after(boundary);
+  const caret = document.createRange();
+  caret.setStartAfter(boundary);
+  caret.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(caret);
   const d = docs.find(x => x.id === activeId);
-  if (d && text && text.trim()) {
+  if (d) {
     d.notes = d.notes || [];
-    d.notes.unshift({ id: Date.now(), text: text.trim(), anchor, createdAt: new Date().toISOString() });
+    d.notes.unshift({ id, kind: 'annotation', text: text.trim(), anchor, createdAt: new Date().toISOString() });
   }
   saveCurrentDoc(); renderNotes(); renderMarginNotes(); schedulePersist();
+}
+
+function prepareAnnotationMarks() {
+  const editor = document.getElementById('editor');
+  if (!editor) return;
+  editor.querySelectorAll('.annotation').forEach(mark => {
+    mark.contentEditable = 'false';
+    const next = mark.nextElementSibling;
+    if (next && next.classList.contains('annotation-boundary')) return;
+    const boundary = document.createElement('span');
+    boundary.className = 'annotation-boundary';
+    boundary.setAttribute('aria-hidden', 'true');
+    boundary.contentEditable = 'false';
+    mark.after(boundary);
+  });
+}
+
+function focusAnnotation(note) {
+  const editor = document.getElementById('editor');
+  let mark = editor.querySelector(`[data-annotation-id="${note.id}"]`);
+  if (!mark && note.anchor) {
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const index = node.nodeValue.indexOf(note.anchor);
+      if (index < 0) continue;
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + note.anchor.length);
+      mark = document.createElement('span');
+      mark.className = 'annotation';
+      mark.dataset.annotationId = note.id;
+      mark.contentEditable = 'false';
+      range.surroundContents(mark);
+      prepareAnnotationMarks();
+      saveCurrentDoc();
+      break;
+    }
+  }
+  if (!mark) { alert('The annotated passage may have been edited or removed.'); return; }
+  mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  mark.classList.remove('annotation-focus');
+  requestAnimationFrame(() => mark.classList.add('annotation-focus'));
+  setTimeout(() => mark.classList.remove('annotation-focus'), 1800);
 }
 
 function applyBeatTemplate() {
@@ -1370,16 +1434,21 @@ function renderMarginNotes() {
   const list = document.getElementById('margin-notes-list');
   if (!list) return;
   const d = docs.find(x => x.id === activeId);
-  const notes = d && d.notes ? d.notes : [];
-  list.innerHTML = notes.length ? notes.map(n => `<button data-id="${n.id}"><strong>${escapeHTML(n.text)}</strong>${n.anchor ? `<span>on “${escapeHTML(n.anchor)}”</span>` : ''}</button>`).join('') : '<div class="panel-empty">No notes for this document.</div>';
-  list.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => { showInspectorPanel('notes'); toggleInspector(true); }));
+  const notes = d && d.notes ? d.notes.filter(n => n.anchor || n.kind === 'annotation') : [];
+  list.innerHTML = notes.length ? notes.map(n => `<button data-id="${n.id}"><strong>${escapeHTML(n.text)}</strong><span>on “${escapeHTML(n.anchor)}”</span></button>`).join('') : '<div class="panel-empty">Select manuscript text, then choose Annotate.</div>';
+  list.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => focusAnnotation(notes.find(n => n.id === +btn.dataset.id))));
 }
 
 function updateModeButtons() {
-  const states = { 'typewriter-btn': typewriterMode, 'proofing-btn': proofingMode, 'split-btn': splitMode, 'margin-btn': marginMode };
-  Object.entries(states).forEach(([id, on]) => { const el = document.getElementById(id); if (el) el.classList.toggle('active', on); });
+  const states = { 'typewriter-btn': typewriterMode, 'proofing-btn': proofingMode, 'split-btn': splitMode };
+  Object.entries(states).forEach(([id, on]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle('active', on);
+    el.setAttribute('aria-pressed', String(on));
+  });
   const marginToggle = document.getElementById('margin-toggle');
-  if (marginToggle) marginToggle.textContent = marginMode ? 'In margin ✓' : 'Show in margin';
+  if (marginToggle) marginToggle.textContent = marginMode ? 'Annotations shown ✓' : 'Show annotations';
 }
 
 function commandItems() {
@@ -1561,6 +1630,334 @@ function saveProjectToArchive() {
   writeProjectArchive(archive);
 }
 
+function formatterSettings() {
+  return {
+    layoutVersion: 3,
+    trim: document.getElementById('formatter-trim').value,
+    theme: document.getElementById('formatter-theme').value,
+    opening: document.getElementById('formatter-opening').value,
+    dropcaps: document.getElementById('formatter-dropcaps').checked,
+    drafts: document.getElementById('formatter-drafts').checked
+  };
+}
+
+function openFormatter() {
+  saveProjectToArchive();
+  const projects = projectArchive().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  const select = document.getElementById('formatter-project');
+  select.innerHTML = projects.map(p => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.title)}</option>`).join('');
+  select.value = projects.some(p => p.id === currentProjectId) ? currentProjectId : (projects[0] ? projects[0].id : '');
+  document.getElementById('formatter-overlay').classList.add('open');
+  loadFormatterSettings();
+  renderFormatter();
+}
+
+function closeFormatter() { document.getElementById('formatter-overlay').classList.remove('open'); }
+
+function loadFormatterSettings() {
+  const id = document.getElementById('formatter-project').value;
+  let settings = {};
+  try { settings = JSON.parse(localStorage.getItem(`folio-formatter:${id}`) || '{}'); } catch { settings = {}; }
+  document.getElementById('formatter-trim').value = settings.layoutVersion === 3 ? (settings.trim || '6x9') : '6x9';
+  document.getElementById('formatter-theme').value = settings.theme || 'classic';
+  document.getElementById('formatter-opening').value = settings.opening || 'centered';
+  document.getElementById('formatter-dropcaps').checked = settings.layoutVersion === 3 && settings.dropcaps === true;
+  document.getElementById('formatter-drafts').checked = settings.drafts !== false;
+}
+
+function selectedFormatterProject() {
+  const id = document.getElementById('formatter-project').value;
+  return projectArchive().find(p => p.id === id);
+}
+
+function formatterDocuments(project, settings) {
+  return project ? (project.docs || []).filter(d => d.section === 'manuscript' && !d.isFolder && (settings.drafts || d.status !== 'draft')) : [];
+}
+
+function cleanBookHTML(html) {
+  const wrap = document.createElement('div');
+  wrap.innerHTML = html || '';
+  wrap.querySelectorAll('.annotation-boundary').forEach(el => el.remove());
+  wrap.querySelectorAll('.annotation').forEach(el => el.replaceWith(...el.childNodes));
+  wrap.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+  [...wrap.childNodes].forEach(node => {
+    if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+      const paragraph = document.createElement('p');
+      paragraph.textContent = node.textContent;
+      node.replaceWith(paragraph);
+    } else if (node.nodeType === Node.ELEMENT_NODE && node.matches('div:not(.scene-break)')) {
+      const paragraph = document.createElement('p');
+      paragraph.innerHTML = node.innerHTML;
+      node.replaceWith(paragraph);
+    }
+  });
+  return wrap.innerHTML;
+}
+
+function applyFormatterDropCap(prose) {
+  if (!prose || prose.querySelector('.formatter-dropcap')) return;
+  const firstBlock = prose.querySelector('p, div, blockquote');
+  if (!firstBlock) return;
+  const walker = document.createTreeWalker(firstBlock, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    const index = node.nodeValue.search(/\S/);
+    if (index < 0) continue;
+    const before = node.nodeValue.slice(0, index);
+    const letter = node.nodeValue[index];
+    const after = node.nodeValue.slice(index + 1);
+    const dropCap = document.createElement('span');
+    dropCap.className = 'formatter-dropcap';
+    dropCap.textContent = letter;
+    const fragment = document.createDocumentFragment();
+    if (before) fragment.appendChild(document.createTextNode(before));
+    fragment.appendChild(dropCap);
+    if (after) fragment.appendChild(document.createTextNode(after));
+    node.replaceWith(fragment);
+    return;
+  }
+}
+
+function renderFormatter() {
+  const project = selectedFormatterProject();
+  const settings = formatterSettings();
+  const preview = document.getElementById('formatter-preview');
+  if (!project) { preview.innerHTML = '<div class="formatter-empty">Create a project before opening the formatter.</div>'; return; }
+  localStorage.setItem(`folio-formatter:${project.id}`, JSON.stringify(settings));
+  const chapters = formatterDocuments(project, settings);
+  const words = chapters.reduce((sum, d) => sum + countWords(d.content || ''), 0);
+  preview.innerHTML = '';
+  let pageNumber = 0;
+
+  const createPage = (chapter, continuation = false) => {
+    pageNumber += 1;
+    const page = document.createElement('article');
+    page.className = `formatter-page trim-${settings.trim} theme-${settings.theme} opening-${settings.opening} ${settings.dropcaps && !continuation ? 'dropcaps' : ''}`;
+    page.innerHTML = `${continuation ? '' : `<h1>${escapeHTML(chapter.title)}</h1>`}<div class="formatter-prose"></div><div class="formatter-page-number">${pageNumber}</div>`;
+    preview.appendChild(page);
+    return { page, prose: page.querySelector('.formatter-prose') };
+  };
+
+  const overflows = page => page.scrollHeight > page.clientHeight + 1;
+
+  chapters.forEach(chapter => {
+    const source = document.createElement('div');
+    source.innerHTML = cleanBookHTML(chapter.content);
+    let current = createPage(chapter);
+    [...source.childNodes].filter(node => node.nodeType === 1 || node.textContent.trim()).forEach((original, blockIndex) => {
+      let block = original.cloneNode(true);
+      current.prose.appendChild(block);
+      if (blockIndex === 0 && settings.dropcaps) applyFormatterDropCap(current.prose);
+      if (!overflows(current.page)) return;
+      block.remove();
+      if (current.prose.childNodes.length) current = createPage(chapter, true);
+      block = original.cloneNode(true);
+      current.prose.appendChild(block);
+      if (blockIndex === 0 && settings.dropcaps) applyFormatterDropCap(current.prose);
+      if (!overflows(current.page)) return;
+
+      block.remove();
+      const remaining = original.textContent.trim().split(/\s+/).filter(Boolean);
+      let needsDropCap = blockIndex === 0 && settings.dropcaps;
+      while (remaining.length) {
+        const paragraph = document.createElement('p');
+        current.prose.appendChild(paragraph);
+        let fitted = 0;
+        while (fitted < remaining.length) {
+          paragraph.textContent = remaining.slice(0, fitted + 1).join(' ');
+          if (overflows(current.page)) break;
+          fitted += 1;
+        }
+        if (fitted === 0) {
+          paragraph.remove();
+          current = createPage(chapter, true);
+          continue;
+        }
+        paragraph.textContent = remaining.splice(0, fitted).join(' ');
+        if (needsDropCap) {
+          applyFormatterDropCap(current.prose);
+          needsDropCap = false;
+        }
+        if (remaining.length) current = createPage(chapter, true);
+      }
+    });
+  });
+
+  if (!pageNumber) preview.innerHTML = '<div class="formatter-empty">This book has no chapters included in the current settings.</div>';
+  document.getElementById('formatter-summary').textContent = `${chapters.length} chapter${chapters.length === 1 ? '' : 's'} · ${words.toLocaleString()} words · ${pageNumber} page${pageNumber === 1 ? '' : 's'}`;
+}
+
+function legacyExportFormattedBook() {
+  const project = selectedFormatterProject();
+  if (!project) return;
+  const settings = formatterSettings();
+  const chapters = formatterDocuments(project, settings);
+  if (!chapters.length) { alert('This book has no chapters included in the current settings.'); return; }
+  if (!window.jspdf || !window.jspdf.jsPDF) { alert('The PDF formatter could not load. Reload the page and try again.'); return; }
+  const sizes = { '5x8': [360, 576], '5.5x8.5': [396, 612], '6x9': [432, 648], '8.5x11': [612, 792] };
+  const [pageWidth, pageHeight] = sizes[settings.trim] || sizes['8.5x11'];
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: [pageWidth, pageHeight], compress: true, putOnlyUsedFonts: true });
+  const bodyFont = settings.theme === 'modern' ? 'helvetica' : 'times';
+  const bodySize = settings.trim === '8.5x11'
+    ? (settings.theme === 'modern' ? 11 : 11.5)
+    : (settings.theme === 'modern' ? 10 : 10.5);
+  const leading = bodySize * 1.48;
+  const bottomMargin = settings.trim === '8.5x11' ? 66 : 48;
+  let pageNumber = 1;
+
+  const margins = () => settings.trim === '8.5x11'
+    ? { left: 72, right: 72 }
+    : settings.trim === '6x9' ? { left: 54, right: 54 }
+    : pageNumber % 2 ? { left: 52, right: 44 } : { left: 44, right: 52 };
+  const drawFolio = () => {
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.setTextColor(70);
+    pdf.text(String(pageNumber), pageWidth / 2, pageHeight - 25, { align: 'center' });
+    pdf.setTextColor(28);
+  };
+  const addPage = (continuation = true) => {
+    drawFolio();
+    pdf.addPage([pageWidth, pageHeight], 'portrait');
+    pageNumber += 1;
+    return continuation ? (settings.trim === '8.5x11' ? 78 : 66) : 50;
+  };
+  const sourceParagraphs = chapter => {
+    const source = document.createElement('div');
+    source.innerHTML = cleanBookHTML(chapter.content);
+    const blocks = [...source.childNodes].map(node => node.textContent.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    return blocks.length ? blocks : [source.textContent.replace(/\s+/g, ' ').trim()].filter(Boolean);
+  };
+
+  chapters.forEach((chapter, chapterIndex) => {
+    if (chapterIndex) {
+      drawFolio();
+      pdf.addPage([pageWidth, pageHeight], 'portrait');
+      pageNumber += 1;
+    }
+    const margin = margins();
+    const contentWidth = pageWidth - margin.left - margin.right;
+    const titleY = settings.opening === 'high' ? pageHeight * .2 : settings.opening === 'low' ? pageHeight * .38 : pageHeight * .29;
+    pdf.setFont(bodyFont, 'bold');
+    pdf.setFontSize(20);
+    pdf.setTextColor(28);
+    const titleLines = pdf.splitTextToSize(chapter.title, contentWidth * .82);
+    pdf.text(titleLines, pageWidth / 2, titleY, { align: 'center', lineHeightFactor: 1.15 });
+    let y = titleY + titleLines.length * 23 + 60;
+    const paragraphs = sourceParagraphs(chapter);
+
+    paragraphs.forEach((paragraph, paragraphIndex) => {
+      let currentMargin = margins();
+      let width = pageWidth - currentMargin.left - currentMargin.right;
+      pdf.setFont(bodyFont, 'normal');
+      pdf.setFontSize(bodySize);
+      const hasDropCap = paragraphIndex === 0 && settings.dropcaps && paragraph.length > 1;
+      const paragraphText = hasDropCap ? paragraph.slice(1).trimStart() : paragraph;
+      let lines = pdf.splitTextToSize(paragraphText, width - (hasDropCap ? 24 : paragraphIndex ? 14 : 0));
+      const availableLines = Math.floor((pageHeight - bottomMargin - y) / leading);
+      if (availableLines < Math.min(3, lines.length)) {
+        y = addPage(true);
+        currentMargin = margins();
+        width = pageWidth - currentMargin.left - currentMargin.right;
+        pdf.setFont(bodyFont, 'normal');
+        pdf.setFontSize(bodySize);
+        pdf.setTextColor(28);
+        lines = pdf.splitTextToSize(paragraphText, width - (hasDropCap ? 24 : paragraphIndex ? 14 : 0));
+      }
+      let firstLine = true;
+      while (lines.length) {
+        if (y + leading > pageHeight - bottomMargin) {
+          y = addPage(true);
+          currentMargin = margins();
+          width = pageWidth - currentMargin.left - currentMargin.right;
+          pdf.setFont(bodyFont, 'normal');
+          pdf.setFontSize(bodySize);
+          pdf.setTextColor(28);
+        }
+        const line = lines.shift();
+        const indent = firstLine && hasDropCap ? 24 : firstLine && paragraphIndex ? 14 : 0;
+        if (firstLine && hasDropCap) {
+          pdf.setFont(bodyFont, 'bold');
+          pdf.setFontSize(28);
+          pdf.text(paragraph[0], currentMargin.left, y + 4);
+          pdf.setFont(bodyFont, 'normal');
+          pdf.setFontSize(bodySize);
+        }
+        pdf.text(line, currentMargin.left + indent, y, { maxWidth: width - indent, align: 'left' });
+        y += leading;
+        firstLine = false;
+      }
+      y += 1.5;
+    });
+  });
+  drawFolio();
+  pdf.setProperties({ title: project.title, subject: 'Formatted book interior', creator: 'Folio' });
+  pdf.save(`${project.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'book'}-formatted.pdf`);
+}
+
+async function exportFormattedBook() {
+  const project = selectedFormatterProject();
+  if (!project) return;
+  if (!window.jspdf || !window.jspdf.jsPDF || !window.html2canvas) {
+    alert('The PDF formatter could not load. Reload the page and try again.');
+    return;
+  }
+  renderFormatter();
+  const pages = [...document.querySelectorAll('#formatter-preview .formatter-page')];
+  if (!pages.length) { alert('This book has no pages included in the current settings.'); return; }
+  const settings = formatterSettings();
+  const sizes = { '5x8': [360, 576], '5.5x8.5': [396, 612], '6x9': [432, 648], '8.5x11': [612, 792] };
+  const [pageWidth, pageHeight] = sizes[settings.trim] || sizes['6x9'];
+  const button = document.getElementById('formatter-export');
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Formatting…';
+  try {
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: [pageWidth, pageHeight], compress: true });
+    for (let index = 0; index < pages.length; index += 1) {
+      button.textContent = `Formatting ${index + 1} of ${pages.length}…`;
+      const page = pages[index];
+      const previousShadow = page.style.boxShadow;
+      page.style.boxShadow = 'none';
+      let canvas;
+      try {
+        canvas = await window.html2canvas(page, {
+          backgroundColor: '#f7faf5',
+          scale: 3,
+          logging: false,
+          useCORS: true,
+          allowTaint: false,
+          width: page.offsetWidth,
+          height: page.offsetHeight,
+          onclone: clonedDocument => {
+            const clonedPage = clonedDocument.querySelectorAll('#formatter-preview .formatter-page')[index];
+            if (clonedPage) {
+              clonedPage.style.boxShadow = 'none';
+              clonedPage.style.backgroundColor = '#f7faf5';
+              clonedPage.style.color = '#1c211a';
+            }
+          }
+        });
+      } finally {
+        page.style.boxShadow = previousShadow;
+      }
+      if (index) pdf.addPage([pageWidth, pageHeight], 'portrait');
+      pdf.addImage(canvas.toDataURL('image/jpeg', .98), 'JPEG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
+    }
+    pdf.setProperties({ title: project.title, subject: 'Formatted book interior', creator: 'Folio' });
+    pdf.save(`${project.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'book'}-formatted.pdf`);
+  } catch (error) {
+    console.error('Could not export formatted PDF', error);
+    alert(`The formatted PDF could not be created${error && error.message ? `: ${error.message}` : '.'}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
+
 function openProjects() { saveProjectToArchive(); renderProjects(); document.getElementById('projects-overlay').classList.add('open'); }
 
 function renderProjects() {
@@ -1583,17 +1980,14 @@ function renderProjects() {
           <button data-project-action="edit" type="button">Open &amp; edit</button>
           <button data-project-action="compile" type="button">Compile</button>
           <button data-project-action="rename" type="button">Rename</button>
+          <button data-project-action="cover" type="button">Upload cover image</button>
         </div>
       </div>
-      <div class="project-cover-actions">
-        <button class="project-cover-upload" type="button">Add cover</button>
-        <button class="project-cover-clear" type="button" hidden>Remove</button>
-        <input class="project-cover-input" type="file" accept="image/png,image/jpeg,image/webp,image/avif">
-      </div>
+      <input class="project-cover-input" type="file" accept="image/png,image/jpeg,image/webp,image/avif">
     </div>`;
   }).join('');
   document.querySelectorAll('.project-card').forEach(card => card.addEventListener('click', e => {
-    if (e.target.closest('.project-more, .project-card-menu, .project-cover-actions')) return;
+    if (e.target.closest('.project-more, .project-card-menu, .project-cover-input')) return;
     switchProject(card.dataset.id);
   }));
   document.querySelectorAll('.project-more').forEach(button => button.addEventListener('click', e => {
@@ -1625,23 +2019,17 @@ function renderProjects() {
     if (action === 'edit') switchProject(id);
     if (action === 'compile') { switchProject(id); openCompile(); }
     if (action === 'rename') renameProject(id);
+    if (action === 'cover') button.closest('.project-card').querySelector('.project-cover-input').click();
   }));
-  document.querySelectorAll('.project-cover-upload').forEach(button => button.addEventListener('click', e => {
-    e.stopPropagation();
-    button.closest('.project-card').querySelector('.project-cover-input').click();
-  }));
-  document.querySelectorAll('.project-cover-input').forEach(input => input.addEventListener('change', e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const id = e.target.closest('.project-card').dataset.id;
-    saveProjectCoverFile(id, file);
-  }));
-  document.querySelectorAll('.project-cover-clear').forEach(button => button.addEventListener('click', async e => {
-    e.stopPropagation();
-    const id = button.closest('.project-card').dataset.id;
-    try { await deleteStoredCover(id); renderProjects(); }
-    catch (error) { console.error('Could not remove cover', error); alert('The cover could not be removed.'); }
-  }));
+  document.querySelectorAll('.project-cover-input').forEach(input => {
+    input.addEventListener('click', e => e.stopPropagation());
+    input.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const id = e.target.closest('.project-card').dataset.id;
+      saveProjectCoverFile(id, file);
+    });
+  });
   document.querySelectorAll('.project-cover').forEach(cover => {
     cover.addEventListener('dragover', e => { e.preventDefault(); cover.classList.add('drag-over'); });
     cover.addEventListener('dragleave', () => cover.classList.remove('drag-over'));
@@ -1686,8 +2074,7 @@ async function hydrateProjectCovers(projects) {
       const coverElement = card.querySelector('.project-cover');
       coverElement.style.backgroundImage = `url("${cover}")`;
       coverElement.querySelector('.project-cover-placeholder').hidden = true;
-      card.querySelector('.project-cover-upload').textContent = 'Change cover';
-      card.querySelector('.project-cover-clear').hidden = false;
+      card.querySelector('[data-project-action="cover"]').textContent = 'Change cover image';
     } catch (error) {
       console.error('Could not load project cover', error);
     }
@@ -1747,19 +2134,20 @@ function setupEventListeners() {
     centerCurrentLine();
   });
   document.getElementById('editor').addEventListener('keyup', centerCurrentLine);
+  document.getElementById('editor').addEventListener('click', centerCurrentLine);
+  document.addEventListener('selectionchange', () => {
+    if (typewriterMode) centerCurrentLine();
+  });
 
   /* Revision and writing-mode toolbar */
-  document.getElementById('annotate-btn').addEventListener('click', annotateSelection);
-  document.getElementById('snapshot-btn').addEventListener('click', takeSnapshot);
   document.getElementById('typewriter-btn').addEventListener('click', () => setTypewriterMode());
   document.getElementById('proofing-btn').addEventListener('click', toggleProofing);
   document.getElementById('split-btn').addEventListener('click', () => toggleSplit());
-  document.getElementById('margin-btn').addEventListener('click', () => toggleMargin());
   document.getElementById('split-close').addEventListener('click', () => toggleSplit(false));
   document.getElementById('split-doc-select').addEventListener('change', e => { saveSplitReference(); splitReferenceId = +e.target.value; renderSplitReference(); schedulePersist(); });
   document.getElementById('split-reference-content').addEventListener('input', saveSplitReference);
-  document.getElementById('margin-note-add').addEventListener('click', addNote);
-  document.getElementById('doc-notes-summary').addEventListener('click', () => { showInspectorPanel('notes'); toggleMargin(true); });
+  document.getElementById('margin-note-add').addEventListener('click', annotateSelection);
+  document.getElementById('doc-notes-summary').addEventListener('click', () => showInspectorPanel('notes'));
 
   /* Title input */
   document.getElementById('doc-title-edit').addEventListener('input', () => {
@@ -1836,8 +2224,28 @@ function setupEventListeners() {
   document.getElementById('writing-session').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSession(); } });
   document.getElementById('add-beat-btn').addEventListener('click', addBeat);
   document.getElementById('take-snapshot').addEventListener('click', takeSnapshot);
-  document.getElementById('add-note').addEventListener('click', addNote);
+  document.getElementById('inspector-annotate').addEventListener('click', annotateSelection);
   document.getElementById('margin-toggle').addEventListener('click', () => toggleMargin());
+  document.getElementById('notepad-text').addEventListener('input', e => {
+    const d = docs.find(x => x.id === activeId);
+    if (!d) return;
+    d.documentNote = e.target.value;
+    renderNotesSummary();
+    schedulePersist();
+  });
+  document.getElementById('notepad-lines').addEventListener('click', () => {
+    const d = docs.find(x => x.id === activeId);
+    if (!d) return;
+    d.notepadLined = d.notepadLined === false;
+    renderNotes();
+    schedulePersist();
+  });
+  document.getElementById('notepad-expand').addEventListener('click', () => {
+    const notepad = document.getElementById('document-notepad');
+    const expanded = notepad.classList.toggle('fullscreen');
+    document.getElementById('notepad-expand').textContent = expanded ? 'Close' : 'Full screen';
+    if (expanded) document.getElementById('notepad-text').focus();
+  });
   document.getElementById('bible-filter').addEventListener('input', e => buildBible(e.target.value));
 
   /* Command palette and options */
@@ -1869,6 +2277,11 @@ function setupEventListeners() {
   /* Project shelf and compilation */
   document.getElementById('btn-projects').addEventListener('click', openProjects);
   document.getElementById('new-project-btn').addEventListener('click', createProject);
+  document.getElementById('book-formatter-btn').addEventListener('click', openFormatter);
+  document.getElementById('formatter-back').addEventListener('click', closeFormatter);
+  document.getElementById('formatter-export').addEventListener('click', exportFormattedBook);
+  document.getElementById('formatter-project').addEventListener('change', () => { loadFormatterSettings(); renderFormatter(); });
+  ['formatter-trim', 'formatter-theme', 'formatter-opening', 'formatter-dropcaps', 'formatter-drafts'].forEach(id => document.getElementById(id).addEventListener('change', renderFormatter));
   document.getElementById('project-title-input').addEventListener('input', schedulePersist);
   document.getElementById('compile-cancel').addEventListener('click', closeCompile);
   document.getElementById('compile-export').addEventListener('click', exportManuscript);
@@ -1962,6 +2375,11 @@ function setupEventListeners() {
       toggleFocus();
     }
     if (e.key === 'Escape') {
+      const notepad = document.getElementById('document-notepad');
+      if (notepad.classList.contains('fullscreen')) {
+        notepad.classList.remove('fullscreen');
+        document.getElementById('notepad-expand').textContent = 'Full screen';
+      }
       if (document.body.classList.contains('focus-mode')) toggleFocus();
       closeSearch();
       closeCommandPalette();
