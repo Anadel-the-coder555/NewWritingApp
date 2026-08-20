@@ -2583,6 +2583,7 @@ function renderProjects() {
           <button data-project-action="rename" type="button">Rename</button>
           <button data-project-action="cover" type="button">Upload cover image</button>
           <button data-project-action="export" type="button">Export project file…</button>
+          <button data-project-action="delete" type="button" class="danger">Delete project…</button>
         </div>
       </div>
       <input class="project-cover-input" type="file" accept="image/png,image/jpeg,image/webp,image/avif">
@@ -2623,6 +2624,7 @@ function renderProjects() {
     if (action === 'rename') renameProject(id);
     if (action === 'cover') button.closest('.project-card').querySelector('.project-cover-input').click();
     if (action === 'export') exportProjectFile(id);
+    if (action === 'delete') deleteProject(id);
   }));
   document.querySelectorAll('.project-cover-input').forEach(input => {
     input.addEventListener('click', e => e.stopPropagation());
@@ -2660,6 +2662,45 @@ function renameProject(id) {
     document.getElementById('project-title-input').value = project.title;
     persistState();
   }
+  renderProjects();
+}
+
+async function deleteProject(id) {
+  const projects = projectArchive();
+  const project = projects.find(p => p.id === id);
+  if (!project) return;
+  if (!confirm(`Delete "${project.title}"?\n\nThis permanently deletes every chapter, note, and image in this project. This can't be undone.`)) return;
+
+  const remaining = projects.filter(p => p.id !== id);
+  if (!writeProjectArchive(remaining)) return;
+
+  try { await deleteStoredCover(id); } catch (e) { /* no cover to remove */ }
+  localStorage.removeItem(`folio-formatter:${id}`);
+
+  // If the deleted project was the one currently open in the editor (it always is,
+  // since the shelf this menu lives in is the app's default view), swap in another
+  // project — or a fresh blank one if that was the last project — so nothing keeps
+  // pointing at the id we just removed. Left untouched, the next autosave anywhere
+  // in the app would call saveProjectToArchive() and silently resurrect it.
+  if (id === currentProjectId) {
+    const next = remaining.slice().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0];
+    if (next) {
+      docs = next.docs.map(d => ({ ...d, createdAt: d.createdAt ? new Date(d.createdAt) : new Date() }));
+      nextId = next.nextId;
+      activeId = docs.some(d => d.id === next.activeId) ? next.activeId : docs[0].id;
+      currentProjectId = next.id;
+      document.getElementById('project-title-input').value = next.title;
+    } else {
+      currentProjectId = `project-${Date.now()}`;
+      docs = [{ id: 1, title: 'Untitled', storyDate: '', banner: '', content: '', synopsis: '', status: 'draft', target: 0, tags: [], parent: null, isFolder: false, section: 'manuscript', createdAt: new Date() }];
+      nextId = 2; activeId = 1;
+      document.getElementById('project-title-input').value = 'Untitled Project';
+    }
+    sessionBaseWords = getSessionBase();
+    renderTree(); loadDoc(activeId); persistState();
+    if (!next) saveProjectToArchive();
+  }
+
   renderProjects();
 }
 

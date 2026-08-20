@@ -2399,6 +2399,8 @@ body.margin-mode #editor-wrap { max-width: 680px; flex: 3 1 480px; }
 .project-card-menu button { display: block; width: 100%; padding: 7px 11px; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
 .project-card-menu button[hidden] { display: none; }
 .project-card-menu button:hover { background: var(--accent-bg); color: var(--accent-text); }
+.project-card-menu button.danger { color: #b3413a; }
+.project-card-menu button.danger:hover { background: color-mix(in srgb, #b3413a 14%, transparent); color: #b3413a; }
 
 @media (max-width: 980px) {
   #editor-scroll { flex-wrap: wrap; }
