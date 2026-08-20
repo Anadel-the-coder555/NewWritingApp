@@ -22,8 +22,18 @@ let activeId    = 1;
 let ctxTargetId = null;
 let currentMode = 'editor';
 let saveTimer   = null;
+let typewriterMode = false;
+let proofingMode = false;
+let splitMode = false;
+let marginMode = false;
+let splitReferenceId = null;
+let commandIndex = 0;
+let currentCommands = [];
+let sessionBaseWords = 0;
+let currentProjectId = 'default';
 
-const STATUS_COLORS = { draft: '#B0ADA5', revision: '#E6A820', final: '#4CAF50' };
+const STATUS_COLORS = { draft: '#879181', revision: '#5f7355', final: '#1c211a' };
+const DEFAULT_FONT  = "'Playfair Display', serif";
 
 /* ────────────────────────────────────────
    Local Storage Persistence
@@ -33,7 +43,11 @@ let persistTimer = null;
 
 function persistState() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ docs, nextId, activeId }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      docs, nextId, activeId, currentProjectId,
+      projectTitle: document.getElementById('project-title-input').value,
+      preferences: { typewriterMode, proofingMode, splitMode, marginMode, splitReferenceId }
+    }));
   } catch (e) {
     console.error('Could not save project to local storage', e);
   }
@@ -58,6 +72,13 @@ function loadPersistedState() {
     docs = data.docs.map(d => ({ ...d, createdAt: d.createdAt ? new Date(d.createdAt) : new Date() }));
     nextId = typeof data.nextId === 'number' ? data.nextId : Math.max(...docs.map(d => d.id)) + 1;
     activeId = docs.some(d => d.id === data.activeId) ? data.activeId : docs[0].id;
+    currentProjectId = data.currentProjectId || 'default';
+    if (data.projectTitle) document.getElementById('project-title-input').value = data.projectTitle;
+    typewriterMode = Boolean(data.preferences && data.preferences.typewriterMode);
+    proofingMode = Boolean(data.preferences && data.preferences.proofingMode);
+    splitMode = Boolean(data.preferences && data.preferences.splitMode);
+    marginMode = Boolean(data.preferences && data.preferences.marginMode);
+    splitReferenceId = data.preferences && data.preferences.splitReferenceId;
     return true;
   } catch (e) {
     console.error('Could not load saved project', e);
@@ -75,30 +96,59 @@ function init() {
   updateTotals();
   setupEventListeners();
   document.getElementById('btn-editor').classList.add('active');
+  document.body.classList.toggle('typewriter-mode', typewriterMode);
+  document.body.classList.toggle('proofing-mode', proofingMode);
+  document.body.classList.toggle('split-mode', splitMode);
+  document.body.classList.toggle('margin-mode', marginMode);
+  sessionBaseWords = getSessionBase();
+  renderSession();
+  renderBeats();
+  renderSnapshots();
+  renderNotes();
+  renderSplitReference();
+  renderMarginNotes();
+  updateModeButtons();
   window.addEventListener('beforeunload', () => {
     saveCurrentDoc();
     saveCharacterView();
     persistState();
   });
+  openProjects();
 }
 
 /* ────────────────────────────────────────
    Tree Rendering
 ──────────────────────────────────────── */
 function renderTree() {
-  const manuscript = docs.filter(d => d.section === 'manuscript');
-  const research   = docs.filter(d => d.section === 'research');
-  document.getElementById('doc-tree').innerHTML      = manuscript.map(docItemHTML).join('');
-  document.getElementById('research-tree').innerHTML = research.map(docItemHTML).join('');
+  const manuscript = visibleTreeDocs('manuscript');
+  const research   = visibleTreeDocs('research');
+  document.getElementById('doc-tree').innerHTML      = manuscript.map(({ doc, depth }) => docItemHTML(doc, depth)).join('');
+  document.getElementById('research-tree').innerHTML = research.map(({ doc, depth }) => docItemHTML(doc, depth)).join('');
   attachTreeEvents();
   schedulePersist();
 }
 
-function docItemHTML(d) {
+function visibleTreeDocs(section) {
+  const sectionDocs = docs.filter(d => d.section === section);
+  const result = [];
+  const seen = new Set();
+  const walk = (parent, depth) => sectionDocs.filter(d => (d.parent || null) === parent).forEach(doc => {
+    if (seen.has(doc.id)) return;
+    seen.add(doc.id);
+    result.push({ doc, depth });
+    if (!doc.collapsed) walk(doc.id, depth + 1);
+  });
+  walk(null, 0);
+  sectionDocs.filter(d => !seen.has(d.id)).forEach(doc => result.push({ doc, depth: 0 }));
+  return result;
+}
+
+function docItemHTML(d, depth = 0) {
   const color = STATUS_COLORS[d.status] || STATUS_COLORS.draft;
-  const icon  = d.isFolder ? '▸' : '◦';
+  const hasChildren = docs.some(child => child.parent === d.id);
+  const icon  = hasChildren ? (d.collapsed ? '▸' : '▾') : '◦';
   const wc    = countWords(d.content);
-  return `<div class="doc-item ${d.id === activeId ? 'active' : ''}" data-id="${d.id}" draggable="true">
+  return `<div class="doc-item ${d.id === activeId ? 'active' : ''}" data-id="${d.id}" draggable="true" style="padding-left:${14 + depth * 14}px">
     <span class="doc-icon" style="color:var(--text-faint)">${icon}</span>
     <span class="doc-name">${d.title}</span>
     ${wc > 0 ? `<span class="doc-wc">${wc}</span>` : ''}
@@ -119,6 +169,15 @@ function attachTreeEvents() {
       const fromId = +e.dataTransfer.getData('text/plain');
       const toId   = +el.dataset.id;
       if (fromId !== toId) reorderDoc(fromId, toId);
+    });
+  });
+  document.querySelectorAll('.doc-item').forEach(el => {
+    el.querySelector('.doc-icon').addEventListener('click', e => {
+      const d = docs.find(x => x.id === +el.dataset.id);
+      if (!d || !docs.some(child => child.parent === d.id)) return;
+      e.stopPropagation();
+      d.collapsed = !d.collapsed;
+      renderTree();
     });
   });
 }
@@ -149,8 +208,11 @@ function loadDoc(id) {
 
   document.getElementById('doc-title-edit').value = d.title;
   document.getElementById('editor').innerHTML      = d.content || '';
+  document.getElementById('editor').style.fontFamily = d.font || DEFAULT_FONT;
+  document.getElementById('fmt-font').value         = d.font || DEFAULT_FONT;
   document.getElementById('synopsis-area').value   = d.synopsis || '';
   document.getElementById('status-select').value   = d.status || 'draft';
+  updateStatusControls(d.status || 'draft');
   document.getElementById('target-input').value    = d.target || '';
   document.getElementById('story-date').value      = d.storyDate || '';
   setBanner(d.banner || '');
@@ -160,6 +222,11 @@ function loadDoc(id) {
 
   renderTags(d);
   updateStats();
+  renderBeats();
+  renderSnapshots();
+  renderNotes();
+  renderSplitReference();
+  renderMarginNotes();
   renderTree();
 
   if (currentMode === 'characters') setMode('editor', true);
@@ -225,11 +292,13 @@ function updateStats() {
   const words   = text ? text.split(' ').filter(w => w.length > 0).length : 0;
   const chars   = text.replace(/\s/g, '').length;
   const paras   = (html.match(/<p[^>]*>/gi) || []).length || (text ? 1 : 0);
+  const sentences = text ? (text.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || []).length : 0;
   const readMin = Math.max(1, Math.round(words / 200));
 
   document.getElementById('stat-words').textContent        = words.toLocaleString();
   document.getElementById('stat-chars').textContent        = chars.toLocaleString();
   document.getElementById('stat-paras').textContent        = paras;
+  document.getElementById('stat-sentences').textContent    = sentences;
   document.getElementById('stat-read').textContent         = readMin + ' min';
   document.getElementById('sub-wc').textContent            = words.toLocaleString() + ' words';
   document.getElementById('wordcount-display').textContent = words.toLocaleString() + ' words';
@@ -250,6 +319,25 @@ function updateTotals() {
   const total = ms.reduce((sum, d) => sum + countWords(d.content), 0);
   document.getElementById('total-words').textContent = total.toLocaleString();
   document.getElementById('total-docs').textContent  = ms.length;
+  renderSession();
+}
+
+function getProjectWordTotal() {
+  return docs
+    .filter(d => d.section === 'manuscript' && !d.isFolder)
+    .reduce((sum, d) => sum + countWords(d.content || ''), 0);
+}
+
+function getSessionBase() {
+  const today = new Date().toISOString().slice(0, 10);
+  const key = `${currentProjectId}:${today}`;
+  let bases;
+  try { bases = JSON.parse(localStorage.getItem('folio-session-bases') || '{}'); } catch { bases = {}; }
+  if (typeof bases[key] !== 'number') {
+    bases[key] = getProjectWordTotal();
+    localStorage.setItem('folio-session-bases', JSON.stringify(bases));
+  }
+  return bases[key];
 }
 
 /* ────────────────────────────────────────
@@ -261,6 +349,12 @@ function fmt(cmd) {
 }
 
 function applyBlock(tag) {
+  if (tag === 'div') {
+    document.execCommand('insertHTML', false, '<div class="scene-break">· · ·</div><p><br></p>');
+    document.getElementById('fmt-block').value = 'p';
+    document.getElementById('editor').focus();
+    return;
+  }
   document.execCommand('formatBlock', false, tag);
   document.getElementById('editor').focus();
 }
@@ -391,17 +485,19 @@ function hideCtx() {
 ──────────────────────────────────────── */
 function setMode(mode, skipSave = false) {
   currentMode = mode;
+  document.body.dataset.view = mode;
   if (!skipSave) {
     saveCurrentDoc();
     saveCharacterView();
   }
 
-  ['editor', 'cork', 'outline', 'timeline', 'board'].forEach(m => {
+  ['editor', 'cork', 'outline', 'timeline', 'board', 'bible'].forEach(m => {
     const btnId = m === 'editor'  ? 'btn-editor'
                 : m === 'cork'    ? 'btn-cork'
                 : m === 'outline' ? 'btn-outline'
                 : m === 'timeline'? 'btn-timeline'
-                : 'btn-board';
+                : m === 'board'   ? 'btn-board'
+                : 'btn-bible';
     document.getElementById(btnId).classList.toggle('active', m === mode);
   });
 
@@ -412,11 +508,13 @@ function setMode(mode, skipSave = false) {
   document.getElementById('timeline-view').className  = mode === 'timeline' ? 'active' : '';
   document.getElementById('character-view').className  = mode === 'characters' ? 'active' : '';
   document.getElementById('board-view').className     = mode === 'board'    ? 'active' : '';
+  document.getElementById('bible-view').className     = mode === 'bible'    ? 'active' : '';
 
   if (mode === 'cork')     buildCork();
   if (mode === 'outline')  buildOutline();
   if (mode === 'timeline') buildTimeline();
   if (mode === 'board')    buildBoard();
+  if (mode === 'bible')    buildBible();
   if (mode === 'characters') loadCharacterView();
 }
 
@@ -424,7 +522,7 @@ function buildCork() {
   const ms = docs.filter(d => d.section === 'manuscript');
   document.getElementById('cork-grid').innerHTML = ms.map(d => {
     const snippet  = d.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240);
-    const pinColor = d.id === activeId ? '#C9462A' : '#8B7EC8';
+    const pinColor = d.id === activeId ? 'var(--accent)' : 'var(--text-faint)';
     return `<div class="cork-card" data-id="${d.id}">
       <div class="cork-pin" style="background:${pinColor}"></div>
       <div class="cork-title">${d.title}</div>
@@ -677,6 +775,7 @@ function buildBoardCards(canvasEl) {
       <div class="board-card-header">
         <span class="board-card-num">${numLabel}</span>
         <span class="board-card-title">${d.title}</span>
+        <button class="board-card-thread-btn ${d.inThread ? 'active' : ''}" title="${d.inThread ? 'Remove from red thread' : 'Add to red thread'}"></button>
         <span class="board-card-pin" style="background:${STATUS_COLORS[d.status]}"></span>
       </div>
       ${d.banner
@@ -694,6 +793,15 @@ function buildBoardCards(canvasEl) {
       </div>`;
 
     makeBoardCardDraggable(el, d.id);
+
+    el.querySelector('.board-card-thread-btn').addEventListener('click', e => {
+      e.stopPropagation();
+      d.inThread = !d.inThread;
+      e.target.classList.toggle('active', d.inThread);
+      e.target.title = d.inThread ? 'Remove from red thread' : 'Add to red thread';
+      drawBoardThread();
+      schedulePersist();
+    });
 
     el.addEventListener('click', e => {
       e.stopPropagation();
@@ -716,6 +824,7 @@ function makeBoardCardDraggable(el, id) {
 
   el.addEventListener('mousedown', e => {
     if (e.button !== 0) return;
+    if (e.target.closest('.board-card-thread-btn')) return;
     e.stopPropagation();
     dragging  = true;
     startX    = e.clientX;
@@ -774,13 +883,11 @@ function drawBoardThread() {
   ctx.clearRect(0, 0, threadC.width, threadC.height);
   if (!boardShowThread) return;
 
-  const dated = docs
-    .filter(d => d.section === 'manuscript' && d.storyDate)
-    .sort((a, b) => new Date(a.storyDate) - new Date(b.storyDate));
+  const threaded = docs.filter(d => d.section === 'manuscript' && d.inThread);
 
-  for (let i = 0; i < dated.length - 1; i++) {
-    const a = getBoardCardCenter(dated[i].id);
-    const b = getBoardCardCenter(dated[i + 1].id);
+  for (let i = 0; i < threaded.length - 1; i++) {
+    const a = getBoardCardCenter(threaded[i].id);
+    const b = getBoardCardCenter(threaded[i + 1].id);
     if (!a || !b) continue;
 
     const mx = (a.x + b.x) / 2;
@@ -790,7 +897,7 @@ function drawBoardThread() {
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.quadraticCurveTo(mx, my, b.x, b.y);
-    ctx.strokeStyle = 'rgba(160,40,20,0.2)';
+    ctx.strokeStyle = 'rgba(38,42,36,0.35)';
     ctx.lineWidth   = 5;
     ctx.lineCap     = 'round';
     ctx.stroke();
@@ -799,7 +906,7 @@ function drawBoardThread() {
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.quadraticCurveTo(mx, my, b.x, b.y);
-    ctx.strokeStyle = 'rgba(201,70,42,0.75)';
+    ctx.strokeStyle = 'rgba(95,115,85,0.8)';
     ctx.lineWidth   = 1.5;
     ctx.setLineDash([5, 7]);
     ctx.stroke();
@@ -809,11 +916,11 @@ function drawBoardThread() {
     [a, b].forEach(pt => {
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, 4.5, 0, Math.PI * 2);
-      ctx.fillStyle = '#C9462A';
+      ctx.fillStyle = '#5f7355';
       ctx.fill();
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, 2, 0, Math.PI * 2);
-      ctx.fillStyle = '#F5F2ED';
+      ctx.fillStyle = '#f7faf5';
       ctx.fill();
     });
   }
@@ -830,7 +937,7 @@ function drawBoardMinimap() {
   const scaleX = 110 / W;
   const scaleY = 70  / H;
 
-  ctx.fillStyle = '#0A0908';
+  ctx.fillStyle = '#262a24';
   ctx.fillRect(0, 0, 110, 70);
 
   docs.filter(d => d.section === 'manuscript').forEach(d => {
@@ -990,6 +1097,625 @@ function runSearch(q) {
 }
 
 /* ────────────────────────────────────────
+   Redesign functionality
+──────────────────────────────────────── */
+function escapeHTML(value) {
+  const div = document.createElement('div');
+  div.textContent = String(value || '');
+  return div.innerHTML;
+}
+
+function toggleSidebar(open) {
+  document.body.classList.toggle('sidebar-collapsed', !open);
+  localStorage.setItem('folio-sidebar-open', String(open));
+}
+
+function toggleInspector(open) {
+  document.body.classList.toggle('inspector-collapsed', !open);
+  localStorage.setItem('folio-inspector-open', String(open));
+}
+
+function showInspectorPanel(name) {
+  document.querySelectorAll('.inspector-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.panel === name));
+  document.querySelectorAll('.inspector-panel').forEach(panel => panel.classList.toggle('active', panel.id === `inspector-${name}-panel`));
+  toggleInspector(true);
+  if (name === 'history') renderSnapshots();
+  if (name === 'notes') renderNotes();
+}
+
+function renderSession() {
+  const wordsEl = document.getElementById('session-words');
+  if (!wordsEl) return;
+  const words = Math.max(0, getProjectWordTotal() - sessionBaseWords);
+  wordsEl.textContent = words.toLocaleString();
+  document.getElementById('session-progress-fill').style.width = Math.min(100, words / 10) + '%';
+  const history = JSON.parse(localStorage.getItem('folio-session-history') || '{}');
+  const today = new Date().toISOString().slice(0, 10);
+  history[today] = Math.max(history[today] || 0, words);
+  localStorage.setItem('folio-session-history', JSON.stringify(history));
+  const days = Array.from({ length: 14 }, (_, i) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (13 - i));
+    return history[date.toISOString().slice(0, 10)] || 0;
+  });
+  document.getElementById('session-days').innerHTML = days.map(n => `<span class="${n ? 'written' : ''}" title="${n.toLocaleString()} words"></span>`).join('');
+  let streak = 0;
+  for (let i = days.length - 1; i >= 0 && days[i] > 0; i--) streak++;
+  let best = 0;
+  let run = 0;
+  days.forEach(words => { run = words > 0 ? run + 1 : 0; best = Math.max(best, run); });
+  document.getElementById('session-streak').textContent = `${streak} day${streak === 1 ? '' : 's'}`;
+  document.getElementById('session-best').textContent = `${best} day${best === 1 ? '' : 's'}`;
+}
+
+function toggleSession() {
+  const el = document.getElementById('writing-session');
+  const open = !el.classList.contains('open');
+  el.classList.toggle('open', open);
+  el.setAttribute('aria-expanded', String(open));
+  document.getElementById('session-toggle-mark').textContent = open ? '−' : '+';
+}
+
+function renderBeats() {
+  const d = docs.find(x => x.id === activeId);
+  const list = document.getElementById('beats-list');
+  if (!list) return;
+  const beats = d && d.beats ? d.beats : [];
+  list.innerHTML = beats.map((beat, i) => `<button class="beat-chip ${beat.done ? 'done' : ''}" data-index="${i}" title="Click to complete · right-click to remove">${escapeHTML(beat.label)}</button>`).join('');
+  list.querySelectorAll('.beat-chip').forEach(btn => {
+    btn.addEventListener('click', () => { d.beats[+btn.dataset.index].done = !d.beats[+btn.dataset.index].done; renderBeats(); schedulePersist(); });
+    btn.addEventListener('contextmenu', e => { e.preventDefault(); d.beats.splice(+btn.dataset.index, 1); renderBeats(); schedulePersist(); });
+  });
+}
+
+function addBeat() {
+  const label = prompt('Beat name');
+  if (!label || !label.trim()) return;
+  const d = docs.find(x => x.id === activeId);
+  if (!d) return;
+  d.beats = d.beats || [];
+  d.beats.push({ label: label.trim(), done: false });
+  renderBeats();
+  schedulePersist();
+}
+
+function toggleBeats() {
+  document.body.classList.toggle('beats-open');
+  updateOptionChecks();
+}
+
+function setTypewriterMode(on = !typewriterMode) {
+  typewriterMode = on;
+  document.body.classList.toggle('typewriter-mode', on);
+  updateOptionChecks();
+  updateModeButtons();
+  schedulePersist();
+}
+
+function centerCurrentLine() {
+  if (!typewriterMode) return;
+  const selection = window.getSelection();
+  const node = selection && selection.anchorNode;
+  const element = node && (node.nodeType === 1 ? node : node.parentElement);
+  const block = element && element.closest('#editor > *');
+  document.querySelectorAll('#editor > .current-line').forEach(el => el.classList.remove('current-line'));
+  if (block) { block.classList.add('current-line'); block.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+}
+
+function toggleProofing() {
+  proofingMode = !proofingMode;
+  document.body.classList.toggle('proofing-mode', proofingMode);
+  updateOptionChecks();
+  updateModeButtons();
+  schedulePersist();
+}
+
+function takeSnapshot() {
+  saveCurrentDoc();
+  const d = docs.find(x => x.id === activeId);
+  if (!d || d.entityType) return;
+  d.snapshots = d.snapshots || [];
+  d.snapshots.unshift({ id: Date.now(), title: d.title, content: d.content, words: countWords(d.content), createdAt: new Date().toISOString() });
+  renderSnapshots();
+  showInspectorPanel('history');
+  schedulePersist();
+}
+
+function renderSnapshots() {
+  const list = document.getElementById('snapshot-list');
+  if (!list) return;
+  const d = docs.find(x => x.id === activeId);
+  const snapshots = d && d.snapshots ? d.snapshots : [];
+  list.innerHTML = snapshots.length ? snapshots.map(s => `<div class="snapshot-item" data-id="${s.id}"><div><strong>${new Date(s.createdAt).toLocaleString()}</strong><span>${s.words.toLocaleString()} words</span></div><div><button data-action="compare">Compare</button><button data-action="restore">Restore</button></div></div>`).join('') : '<div class="panel-empty">No snapshots yet.</div>';
+  list.querySelectorAll('.snapshot-item button').forEach(btn => btn.addEventListener('click', () => {
+    const snap = snapshots.find(s => s.id === +btn.closest('.snapshot-item').dataset.id);
+    if (!snap) return;
+    if (btn.dataset.action === 'compare') {
+      const delta = countWords(d.content || '') - snap.words;
+      alert(`Current draft is ${Math.abs(delta).toLocaleString()} word${Math.abs(delta) === 1 ? '' : 's'} ${delta >= 0 ? 'longer' : 'shorter'} than this snapshot.`);
+    } else if (confirm('Restore this snapshot? A snapshot of the current version will be kept first.')) {
+      d.snapshots.unshift({ id: Date.now(), title: d.title, content: d.content, words: countWords(d.content), createdAt: new Date().toISOString() });
+      d.title = snap.title; d.content = snap.content; loadDoc(d.id); renderSnapshots(); schedulePersist();
+    }
+  }));
+}
+
+function compareLastSnapshot() {
+  saveCurrentDoc();
+  const d = docs.find(x => x.id === activeId);
+  const snap = d && d.snapshots && d.snapshots[0];
+  if (!snap) { alert('Take a snapshot first.'); return; }
+  const currentWords = countWords(d.content || '');
+  const delta = currentWords - snap.words;
+  showInspectorPanel('history');
+  alert(`Since ${new Date(snap.createdAt).toLocaleString()}: ${delta >= 0 ? '+' : ''}${delta.toLocaleString()} words (${currentWords.toLocaleString()} total).`);
+}
+
+function addNote() {
+  const text = prompt('Margin note');
+  if (!text || !text.trim()) return;
+  const d = docs.find(x => x.id === activeId);
+  if (!d) return;
+  d.notes = d.notes || [];
+  const selection = window.getSelection();
+  d.notes.unshift({ id: Date.now(), text: text.trim(), anchor: selection ? selection.toString().slice(0, 80) : '', createdAt: new Date().toISOString() });
+  renderNotes(); renderMarginNotes(); schedulePersist();
+}
+
+function renderNotes() {
+  const list = document.getElementById('notes-list');
+  if (!list) return;
+  const d = docs.find(x => x.id === activeId);
+  const notes = d && d.notes ? d.notes : [];
+  list.innerHTML = notes.length ? notes.map(n => `<div class="note-item" data-id="${n.id}"><button title="Delete note">×</button><span>${escapeHTML(n.text)}</span>${n.anchor ? `<em>on “${escapeHTML(n.anchor)}”</em>` : ''}<small>${new Date(n.createdAt).toLocaleString()}</small></div>`).join('') : '<div class="panel-empty">No margin notes yet.</div>';
+  list.querySelectorAll('.note-item > button').forEach(btn => btn.addEventListener('click', () => { d.notes = d.notes.filter(n => n.id !== +btn.parentElement.dataset.id); renderNotes(); renderMarginNotes(); schedulePersist(); }));
+  renderNotesSummary();
+}
+
+function renderNotesSummary() {
+  const button = document.getElementById('doc-notes-summary');
+  if (!button) return;
+  const d = docs.find(x => x.id === activeId);
+  const notes = d && d.notes ? d.notes : [];
+  button.hidden = notes.length === 0;
+  button.textContent = `${notes.length} margin note${notes.length === 1 ? '' : 's'} · read ${notes.length === 1 ? 'it' : 'them'}`;
+}
+
+function updateStatusControls(status) {
+  document.querySelectorAll('#status-segmented button').forEach(btn => btn.classList.toggle('active', btn.dataset.status === status));
+}
+
+function buildBible(filter = '') {
+  const query = filter.trim().toLowerCase();
+  const entities = docs.filter(d => d.entityType && (!query || [d.title, d.entityType, ...(d.aliases || [])].join(' ').toLowerCase().includes(query)));
+  const labels = { character: 'Characters', location: 'Places', event: 'Events', object: 'Objects & motifs' };
+  const container = document.getElementById('bible-groups');
+  container.innerHTML = Object.keys(labels).map(type => {
+    const items = entities.filter(e => e.entityType === type);
+    if (!items.length) return '';
+    return `<section class="bible-group"><h3>${labels[type]}</h3><div>${items.map(e => {
+      const note = e.charFields ? Object.values(e.charFields).find(Boolean) : e.synopsis;
+      const names = [e.title, ...(e.aliases || [])].filter(Boolean).map(name => name.toLowerCase());
+      const mentions = docs.filter(d => !d.entityType).reduce((total, d) => {
+        const text = (d.content || '').replace(/<[^>]+>/g, ' ').toLowerCase();
+        return total + names.reduce((count, name) => count + (text.split(name).length - 1), 0);
+      }, 0);
+      return `<button class="bible-card" data-id="${e.id}"><strong>${escapeHTML(e.title)}</strong><span>${mentions} mention${mentions === 1 ? '' : 's'}</span><p>${escapeHTML(note || 'No notes yet.')}</p></button>`;
+    }).join('')}</div></section>`;
+  }).join('') || '<div class="panel-empty">No matching entities.</div>';
+  container.querySelectorAll('.bible-card').forEach(card => card.addEventListener('click', () => loadDoc(+card.dataset.id)));
+}
+
+function annotateSelection() {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !document.getElementById('editor').contains(selection.anchorNode)) {
+    alert('Select text in the manuscript first.');
+    return;
+  }
+  const anchor = selection.toString().slice(0, 120);
+  const range = selection.getRangeAt(0);
+  const mark = document.createElement('span');
+  mark.className = 'annotation';
+  try { range.surroundContents(mark); } catch { document.execCommand('hiliteColor', false, 'transparent'); }
+  const text = prompt('Note for this annotation');
+  const d = docs.find(x => x.id === activeId);
+  if (d && text && text.trim()) {
+    d.notes = d.notes || [];
+    d.notes.unshift({ id: Date.now(), text: text.trim(), anchor, createdAt: new Date().toISOString() });
+  }
+  saveCurrentDoc(); renderNotes(); renderMarginNotes(); schedulePersist();
+}
+
+function applyBeatTemplate() {
+  const d = docs.find(x => x.id === activeId);
+  if (!d) return;
+  const template = ['Setup', 'Inciting incident', 'First turn', 'Midpoint', 'Dark night', 'Climax'];
+  if (d.beats && d.beats.length && !confirm('Replace this document’s existing beats with the Three-Act template?')) return;
+  d.beats = template.map(label => ({ label, done: false }));
+  document.body.classList.add('beats-open');
+  renderBeats(); updateOptionChecks(); schedulePersist();
+}
+
+function toggleSplit(on = !splitMode) {
+  splitMode = on;
+  document.body.classList.toggle('split-mode', on);
+  renderSplitReference(); updateModeButtons(); schedulePersist();
+}
+
+function renderSplitReference() {
+  const select = document.getElementById('split-doc-select');
+  if (!select) return;
+  const choices = docs.filter(d => d.section === 'manuscript' && !d.isFolder && d.id !== activeId);
+  if (!choices.some(d => d.id === splitReferenceId)) splitReferenceId = choices[0] ? choices[0].id : null;
+  select.innerHTML = choices.map(d => `<option value="${d.id}" ${d.id === splitReferenceId ? 'selected' : ''}>${escapeHTML(d.title)}</option>`).join('');
+  const ref = docs.find(d => d.id === splitReferenceId);
+  document.getElementById('split-reference-title').textContent = ref ? ref.title : 'No other manuscript document';
+  document.getElementById('split-reference-content').innerHTML = ref ? ref.content || '' : '';
+}
+
+function saveSplitReference() {
+  const ref = docs.find(d => d.id === splitReferenceId);
+  if (!ref) return;
+  ref.content = document.getElementById('split-reference-content').innerHTML;
+  schedulePersist();
+}
+
+function toggleMargin(on = !marginMode) {
+  marginMode = on;
+  document.body.classList.toggle('margin-mode', on);
+  renderMarginNotes(); updateModeButtons(); schedulePersist();
+}
+
+function renderMarginNotes() {
+  const list = document.getElementById('margin-notes-list');
+  if (!list) return;
+  const d = docs.find(x => x.id === activeId);
+  const notes = d && d.notes ? d.notes : [];
+  list.innerHTML = notes.length ? notes.map(n => `<button data-id="${n.id}"><strong>${escapeHTML(n.text)}</strong>${n.anchor ? `<span>on “${escapeHTML(n.anchor)}”</span>` : ''}</button>`).join('') : '<div class="panel-empty">No notes for this document.</div>';
+  list.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => { showInspectorPanel('notes'); toggleInspector(true); }));
+}
+
+function updateModeButtons() {
+  const states = { 'typewriter-btn': typewriterMode, 'proofing-btn': proofingMode, 'split-btn': splitMode, 'margin-btn': marginMode };
+  Object.entries(states).forEach(([id, on]) => { const el = document.getElementById(id); if (el) el.classList.toggle('active', on); });
+  const marginToggle = document.getElementById('margin-toggle');
+  if (marginToggle) marginToggle.textContent = marginMode ? 'In margin ✓' : 'Show in margin';
+}
+
+function commandItems() {
+  const actions = [
+    ['Writing', 'Toggle typewriter scroll', () => setTypewriterMode()],
+    ['Writing', 'Toggle proofing pass', toggleProofing],
+    ['Writing', 'Toggle beat sheet', toggleBeats],
+    ['Writing', 'Toggle split reference', () => toggleSplit()],
+    ['Writing', 'Toggle margin notes', () => toggleMargin()],
+    ['Writing', 'Focus mode', toggleFocus],
+    ['Revision', 'Take a snapshot', takeSnapshot],
+    ['Revision', 'Open margin notes', () => showInspectorPanel('notes')],
+    ['Revision', 'Compare with last snapshot', () => compareLastSnapshot()],
+    ['Structure', 'Apply beat template: Three-Act', applyBeatTemplate],
+    ['Project', 'Compile manuscript', openCompile],
+    ['Project', 'Open projects', openProjects],
+    ['View', 'World Bible', () => setMode('bible')]
+  ].map(([group, label, run]) => ({ group, label, run }));
+  return actions.concat(docs.map(d => ({ group: 'Go to', label: d.title, run: () => loadDoc(d.id) })));
+}
+
+function openCommandPalette() {
+  document.getElementById('command-overlay').classList.add('open');
+  document.getElementById('command-input').value = '';
+  commandIndex = 0;
+  renderCommands('');
+  setTimeout(() => document.getElementById('command-input').focus(), 0);
+}
+
+function closeCommandPalette() { document.getElementById('command-overlay').classList.remove('open'); }
+
+function renderCommands(query) {
+  const q = query.trim().toLowerCase();
+  currentCommands = commandItems().filter(item => !q || `${item.group} ${item.label}`.toLowerCase().includes(q));
+  commandIndex = Math.max(0, Math.min(commandIndex, currentCommands.length - 1));
+  document.getElementById('command-results').innerHTML = currentCommands.map((item, i) => `<button class="command-result ${i === commandIndex ? 'selected' : ''}" data-index="${i}"><span>${item.group}</span><strong>${escapeHTML(item.label)}</strong></button>`).join('') || '<div class="panel-empty">No matching commands.</div>';
+  document.querySelectorAll('.command-result').forEach(btn => btn.addEventListener('click', () => runCommand(+btn.dataset.index)));
+}
+
+function runCommand(index) {
+  const item = currentCommands[index];
+  if (!item) return;
+  closeCommandPalette(); item.run();
+}
+
+function toggleOptionsMenu(force) {
+  const menu = document.getElementById('options-menu');
+  const open = typeof force === 'boolean' ? force : !menu.classList.contains('open');
+  menu.classList.toggle('open', open); updateOptionChecks();
+}
+
+function updateOptionChecks() {
+  const states = { typewriter: typewriterMode, proofing: proofingMode, beats: document.body.classList.contains('beats-open'), split: splitMode, margin: marginMode };
+  Object.entries(states).forEach(([name, on]) => { const btn = document.querySelector(`[data-option="${name}"]`); if (btn) btn.classList.toggle('checked', on); });
+}
+
+function openCompile() {
+  saveCurrentDoc();
+  const manuscript = docs.filter(d => d.section === 'manuscript' && !d.isFolder);
+  document.getElementById('compile-summary').textContent = `${manuscript.length} scenes · ${getProjectWordTotal().toLocaleString()} words`;
+  document.getElementById('compile-overlay').classList.add('open');
+}
+
+function closeCompile() { document.getElementById('compile-overlay').classList.remove('open'); }
+
+function exportManuscript() {
+  saveCurrentDoc();
+  const includeDrafts = document.getElementById('compile-drafts').checked;
+  const includeTitles = document.getElementById('compile-titles').checked;
+  const includeBreaks = document.getElementById('compile-breaks').checked;
+  const includeNotes = document.getElementById('compile-notes').checked;
+  const format = document.querySelector('[name="compile-format"]:checked').value;
+  const chosen = docs.filter(d => d.section === 'manuscript' && !d.isFolder && (includeDrafts || d.status !== 'draft'));
+  const title = document.getElementById('project-title-input').value || 'Untitled Project';
+  let content;
+  let type;
+  if (format !== 'txt') {
+    content = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHTML(title)}</title></head><body class="${format}"><h1>${escapeHTML(title)}</h1>${chosen.map(d => `${includeTitles ? `<h2>${escapeHTML(d.title)}</h2>` : ''}${d.content || ''}${includeNotes && d.notes && d.notes.length ? `<section><h3>Notes</h3><ul>${d.notes.map(n => `<li>${escapeHTML(n.text)}${n.anchor ? ` — “${escapeHTML(n.anchor)}”` : ''}</li>`).join('')}</ul></section>` : ''}`).join(includeBreaks ? '<p style="text-align:center">· · ·</p>' : '')}</body></html>`;
+    type = 'text/html';
+  } else {
+    const toText = html => { const div = document.createElement('div'); div.innerHTML = html; return div.innerText; };
+    const separator = includeBreaks ? '\n\n· · ·\n\n' : '\n\n\n';
+    content = [title, ...chosen.map(d => `${includeTitles ? d.title + '\n\n' : ''}${toText(d.content || '')}${includeNotes && d.notes && d.notes.length ? `\n\nNOTES\n${d.notes.map(n => `- ${n.text}${n.anchor ? ` — “${n.anchor}”` : ''}`).join('\n')}` : ''}`)].join(separator);
+    type = 'text/plain';
+  }
+  const blob = new Blob([content], { type: `${type};charset=utf-8` });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  const extension = format === 'txt' ? 'txt' : 'html';
+  link.download = `${title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'manuscript'}-${format}.${extension}`;
+  link.click(); URL.revokeObjectURL(link.href); closeCompile();
+}
+
+function projectArchive() {
+  try { return JSON.parse(localStorage.getItem('folio-projects') || '[]'); } catch { return []; }
+}
+
+const coverDatabase = new Promise((resolve, reject) => {
+  const request = indexedDB.open('folio-media', 1);
+  request.onupgradeneeded = () => request.result.createObjectStore('project-covers');
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error);
+});
+
+async function coverStore(mode, operation) {
+  const database = await coverDatabase;
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction('project-covers', mode);
+    const store = transaction.objectStore('project-covers');
+    const request = operation(store);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+const getStoredCover = id => coverStore('readonly', store => store.get(id));
+const setStoredCover = (id, value) => coverStore('readwrite', store => store.put(value, id));
+const deleteStoredCover = id => coverStore('readwrite', store => store.delete(id));
+
+function writeProjectArchive(projects) {
+  try {
+    localStorage.setItem('folio-projects', JSON.stringify(projects));
+    return true;
+  } catch (error) {
+    console.error('Could not save project covers', error);
+    alert('The cover could not be saved because browser storage is full. Try a smaller image or remove an older cover.');
+    return false;
+  }
+}
+
+function prepareCoverImage(file) {
+  const accepted = ['image/png', 'image/jpeg', 'image/webp', 'image/avif'];
+  if (!accepted.includes(file.type)) return Promise.reject(new Error('Unsupported image type'));
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read image'));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error('Could not decode image'));
+      image.onload = () => {
+        const maxDimension = 900;
+        const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/webp', 0.78));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function saveProjectCoverFile(id, file) {
+  try {
+    const cover = await prepareCoverImage(file);
+    await setStoredCover(id, cover);
+    const projects = projectArchive();
+    const project = projects.find(p => p.id === id);
+    if (project) {
+      delete project.cover;
+      project.updatedAt = new Date().toISOString();
+      writeProjectArchive(projects);
+    }
+    renderProjects();
+  } catch (error) {
+    console.error('Could not save cover', error);
+    if (error.message !== 'Project not found') alert('That image could not be used. Choose a PNG, JPEG, WebP, or AVIF file.');
+  }
+}
+
+function saveProjectToArchive() {
+  saveCurrentDoc();
+  const archive = projectArchive();
+  const state = { id: currentProjectId, title: document.getElementById('project-title-input').value || 'Untitled Project', docs: JSON.parse(JSON.stringify(docs)), nextId, activeId, updatedAt: new Date().toISOString() };
+  const index = archive.findIndex(p => p.id === state.id);
+  if (index >= 0) archive[index] = state; else archive.push(state);
+  writeProjectArchive(archive);
+}
+
+function openProjects() { saveProjectToArchive(); renderProjects(); document.getElementById('projects-overlay').classList.add('open'); }
+
+function renderProjects() {
+  const archive = projectArchive().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  const allWords = archive.reduce((total, p) => total + (p.docs || []).filter(d => d.section === 'manuscript').reduce((sum, d) => sum + countWords(d.content || ''), 0), 0);
+  document.getElementById('projects-summary').textContent = `${archive.length} project${archive.length === 1 ? '' : 's'} · ${allWords.toLocaleString()} words`;
+  document.getElementById('projects-grid').innerHTML = archive.map(p => {
+    const words = (p.docs || []).filter(d => d.section === 'manuscript').reduce((sum, d) => sum + countWords(d.content || ''), 0);
+    return `<div class="project-card ${p.id === currentProjectId ? 'active' : ''}" data-id="${p.id}">
+      <button class="project-open">
+        <span class="project-cover">
+          <span class="project-cover-placeholder">▧<em>Drop a cover image</em></span>
+        </span>
+        <small>${words.toLocaleString()} words · ${new Date(p.updatedAt).toLocaleDateString()}</small>
+      </button>
+      <div class="project-title-row">
+        <strong>${escapeHTML(p.title)}</strong>
+        <button class="project-more" type="button" title="Project options" aria-label="Options for ${escapeHTML(p.title)}">⋯</button>
+        <div class="project-card-menu">
+          <button data-project-action="edit" type="button">Open &amp; edit</button>
+          <button data-project-action="compile" type="button">Compile</button>
+          <button data-project-action="rename" type="button">Rename</button>
+        </div>
+      </div>
+      <div class="project-cover-actions">
+        <button class="project-cover-upload" type="button">Add cover</button>
+        <button class="project-cover-clear" type="button" hidden>Remove</button>
+        <input class="project-cover-input" type="file" accept="image/png,image/jpeg,image/webp,image/avif">
+      </div>
+    </div>`;
+  }).join('');
+  document.querySelectorAll('.project-card').forEach(card => card.addEventListener('click', e => {
+    if (e.target.closest('.project-more, .project-card-menu, .project-cover-actions')) return;
+    switchProject(card.dataset.id);
+  }));
+  document.querySelectorAll('.project-more').forEach(button => button.addEventListener('click', e => {
+    e.stopPropagation();
+    const menu = button.parentElement.querySelector('.project-card-menu');
+    const card = button.closest('.project-card');
+    const opening = !menu.classList.contains('open');
+    document.querySelectorAll('.project-card-menu.open').forEach(item => item.classList.remove('open'));
+    document.querySelectorAll('.project-card.menu-open').forEach(item => item.classList.remove('menu-open'));
+    menu.classList.toggle('open', opening);
+    card.classList.toggle('menu-open', opening);
+    if (opening) {
+      const trigger = button.getBoundingClientRect();
+      const menuWidth = menu.offsetWidth;
+      const menuHeight = menu.offsetHeight;
+      const left = Math.min(window.innerWidth - menuWidth - 8, Math.max(8, trigger.right - menuWidth));
+      const roomBelow = window.innerHeight - trigger.bottom;
+      const top = roomBelow >= menuHeight + 8
+        ? trigger.bottom + 4
+        : Math.max(8, trigger.top - menuHeight - 4);
+      menu.style.left = `${left}px`;
+      menu.style.top = `${top}px`;
+    }
+  }));
+  document.querySelectorAll('[data-project-action]').forEach(button => button.addEventListener('click', e => {
+    e.stopPropagation();
+    const id = button.closest('.project-card').dataset.id;
+    const action = button.dataset.projectAction;
+    if (action === 'edit') switchProject(id);
+    if (action === 'compile') { switchProject(id); openCompile(); }
+    if (action === 'rename') renameProject(id);
+  }));
+  document.querySelectorAll('.project-cover-upload').forEach(button => button.addEventListener('click', e => {
+    e.stopPropagation();
+    button.closest('.project-card').querySelector('.project-cover-input').click();
+  }));
+  document.querySelectorAll('.project-cover-input').forEach(input => input.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const id = e.target.closest('.project-card').dataset.id;
+    saveProjectCoverFile(id, file);
+  }));
+  document.querySelectorAll('.project-cover-clear').forEach(button => button.addEventListener('click', async e => {
+    e.stopPropagation();
+    const id = button.closest('.project-card').dataset.id;
+    try { await deleteStoredCover(id); renderProjects(); }
+    catch (error) { console.error('Could not remove cover', error); alert('The cover could not be removed.'); }
+  }));
+  document.querySelectorAll('.project-cover').forEach(cover => {
+    cover.addEventListener('dragover', e => { e.preventDefault(); cover.classList.add('drag-over'); });
+    cover.addEventListener('dragleave', () => cover.classList.remove('drag-over'));
+    cover.addEventListener('drop', e => {
+      e.preventDefault(); cover.classList.remove('drag-over');
+      const file = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
+      if (!file) return;
+      const id = cover.closest('.project-card').dataset.id;
+      saveProjectCoverFile(id, file);
+    });
+  });
+  hydrateProjectCovers(archive);
+}
+
+function renameProject(id) {
+  const projects = projectArchive();
+  const project = projects.find(p => p.id === id);
+  if (!project) return;
+  const title = prompt('Rename project', project.title);
+  if (!title || !title.trim()) return;
+  project.title = title.trim();
+  project.updatedAt = new Date().toISOString();
+  if (!writeProjectArchive(projects)) return;
+  if (id === currentProjectId) {
+    document.getElementById('project-title-input').value = project.title;
+    persistState();
+  }
+  renderProjects();
+}
+
+async function hydrateProjectCovers(projects) {
+  await Promise.all(projects.map(async project => {
+    try {
+      let cover = await getStoredCover(project.id);
+      if (!cover && project.cover) {
+        cover = project.cover;
+        await setStoredCover(project.id, cover);
+      }
+      if (!cover) return;
+      const card = document.querySelector(`.project-card[data-id="${CSS.escape(project.id)}"]`);
+      if (!card) return;
+      const coverElement = card.querySelector('.project-cover');
+      coverElement.style.backgroundImage = `url("${cover}")`;
+      coverElement.querySelector('.project-cover-placeholder').hidden = true;
+      card.querySelector('.project-cover-upload').textContent = 'Change cover';
+      card.querySelector('.project-cover-clear').hidden = false;
+    } catch (error) {
+      console.error('Could not load project cover', error);
+    }
+  }));
+}
+
+function switchProject(id) {
+  saveProjectToArchive();
+  const project = projectArchive().find(p => p.id === id);
+  if (!project) return;
+  docs = project.docs.map(d => ({ ...d, createdAt: d.createdAt ? new Date(d.createdAt) : new Date() }));
+  nextId = project.nextId; activeId = docs.some(d => d.id === project.activeId) ? project.activeId : docs[0].id; currentProjectId = project.id;
+  document.getElementById('project-title-input').value = project.title;
+  document.getElementById('projects-overlay').classList.remove('open');
+  sessionBaseWords = getSessionBase(); renderTree(); loadDoc(activeId); persistState();
+}
+
+function createProject() {
+  const title = prompt('Project name', 'Untitled Project');
+  if (!title || !title.trim()) return;
+  saveProjectToArchive(); currentProjectId = `project-${Date.now()}`;
+  docs = [{ id: 1, title: 'Untitled', storyDate: '', banner: '', content: '', synopsis: '', status: 'draft', target: 0, tags: [], parent: null, isFolder: false, section: 'manuscript', createdAt: new Date() }];
+  nextId = 2; activeId = 1; sessionBaseWords = getSessionBase();
+  document.getElementById('project-title-input').value = title.trim();
+  persistState(); saveProjectToArchive(); document.getElementById('projects-overlay').classList.remove('open'); renderTree(); loadDoc(activeId);
+}
+
+/* ────────────────────────────────────────
    Event Listeners
 ──────────────────────────────────────── */
 function setupEventListeners() {
@@ -1004,12 +1730,36 @@ function setupEventListeners() {
     applyBlock(this.value);
   });
 
+  /* Font select */
+  document.getElementById('fmt-font').addEventListener('change', function() {
+    const d = docs.find(x => x.id === activeId);
+    if (!d) return;
+    d.font = this.value;
+    document.getElementById('editor').style.fontFamily = this.value;
+    schedulePersist();
+  });
+
   /* Editor input */
   document.getElementById('editor').addEventListener('input', () => {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => { saveCurrentDoc(); renderTree(); }, 400);
     updateStats();
+    centerCurrentLine();
   });
+  document.getElementById('editor').addEventListener('keyup', centerCurrentLine);
+
+  /* Revision and writing-mode toolbar */
+  document.getElementById('annotate-btn').addEventListener('click', annotateSelection);
+  document.getElementById('snapshot-btn').addEventListener('click', takeSnapshot);
+  document.getElementById('typewriter-btn').addEventListener('click', () => setTypewriterMode());
+  document.getElementById('proofing-btn').addEventListener('click', toggleProofing);
+  document.getElementById('split-btn').addEventListener('click', () => toggleSplit());
+  document.getElementById('margin-btn').addEventListener('click', () => toggleMargin());
+  document.getElementById('split-close').addEventListener('click', () => toggleSplit(false));
+  document.getElementById('split-doc-select').addEventListener('change', e => { saveSplitReference(); splitReferenceId = +e.target.value; renderSplitReference(); schedulePersist(); });
+  document.getElementById('split-reference-content').addEventListener('input', saveSplitReference);
+  document.getElementById('margin-note-add').addEventListener('click', addNote);
+  document.getElementById('doc-notes-summary').addEventListener('click', () => { showInspectorPanel('notes'); toggleMargin(true); });
 
   /* Title input */
   document.getElementById('doc-title-edit').addEventListener('input', () => {
@@ -1028,8 +1778,16 @@ function setupEventListeners() {
 
   document.getElementById('status-select').addEventListener('change', function() {
     const d = docs.find(x => x.id === activeId);
-    if (d) { d.status = this.value; renderTree(); }
+    if (d) { d.status = this.value; updateStatusControls(this.value); renderTree(); schedulePersist(); }
   });
+  document.querySelectorAll('#status-segmented button').forEach(btn => btn.addEventListener('click', () => {
+    const d = docs.find(x => x.id === activeId);
+    if (!d) return;
+    d.status = btn.dataset.status;
+    document.getElementById('status-select').value = d.status;
+    updateStatusControls(d.status);
+    renderTree(); schedulePersist();
+  }));
 
   document.getElementById('target-input').addEventListener('input', updateStats);
 
@@ -1053,6 +1811,7 @@ function setupEventListeners() {
   /* Sidebar add buttons */
   document.getElementById('add-doc-btn').addEventListener('click',      () => addDoc('manuscript'));
   document.getElementById('add-research-btn').addEventListener('click', openEntityModal);
+  document.getElementById('cork-add-scene').addEventListener('click', () => { addDoc('manuscript'); setMode('editor'); });
 
   /* View mode buttons */
   document.getElementById('btn-editor').addEventListener('click',   () => setMode('editor'));
@@ -1060,6 +1819,60 @@ function setupEventListeners() {
   document.getElementById('btn-outline').addEventListener('click',  () => setMode('outline'));
   document.getElementById('btn-timeline').addEventListener('click', () => setMode('timeline'));
   document.getElementById('btn-board').addEventListener('click', () => setMode('board'));
+  document.getElementById('btn-bible').addEventListener('click', () => setMode('bible'));
+
+  /* Collapsible panels and inspector tabs */
+  document.getElementById('sidebar-collapse').addEventListener('click', () => toggleSidebar(false));
+  document.getElementById('sidebar-expand').addEventListener('click', () => toggleSidebar(true));
+  document.getElementById('inspector-collapse').addEventListener('click', () => toggleInspector(false));
+  document.getElementById('inspector-expand').addEventListener('click', () => toggleInspector(true));
+  document.querySelectorAll('.inspector-tab').forEach(btn => btn.addEventListener('click', () => showInspectorPanel(btn.dataset.panel)));
+  /* Primary navigation and synopsis start visible; collapse is session-only. */
+  toggleSidebar(true);
+  toggleInspector(true);
+
+  /* Session, beats, revisions, and notes */
+  document.getElementById('writing-session').addEventListener('click', toggleSession);
+  document.getElementById('writing-session').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSession(); } });
+  document.getElementById('add-beat-btn').addEventListener('click', addBeat);
+  document.getElementById('take-snapshot').addEventListener('click', takeSnapshot);
+  document.getElementById('add-note').addEventListener('click', addNote);
+  document.getElementById('margin-toggle').addEventListener('click', () => toggleMargin());
+  document.getElementById('bible-filter').addEventListener('input', e => buildBible(e.target.value));
+
+  /* Command palette and options */
+  document.getElementById('btn-command').addEventListener('click', openCommandPalette);
+  document.getElementById('command-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeCommandPalette(); });
+  document.getElementById('command-input').addEventListener('input', e => { commandIndex = 0; renderCommands(e.target.value); });
+  document.getElementById('command-input').addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); commandIndex = Math.min(currentCommands.length - 1, commandIndex + 1); renderCommands(e.currentTarget.value); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); commandIndex = Math.max(0, commandIndex - 1); renderCommands(e.currentTarget.value); }
+    if (e.key === 'Enter') { e.preventDefault(); runCommand(commandIndex); }
+  });
+  document.getElementById('btn-menu').addEventListener('click', e => { e.stopPropagation(); toggleOptionsMenu(); });
+  document.querySelectorAll('#options-menu [data-option]').forEach(btn => btn.addEventListener('click', () => {
+    const actions = { typewriter: () => setTypewriterMode(), proofing: toggleProofing, beats: toggleBeats, template: applyBeatTemplate, split: () => toggleSplit(), margin: () => toggleMargin(), compile: openCompile, snapshot: takeSnapshot, book: openBookMode, focus: toggleFocus };
+    actions[btn.dataset.option](); toggleOptionsMenu(false);
+  }));
+  document.addEventListener('click', e => { if (!e.target.closest('#options-menu') && !e.target.closest('#btn-menu')) toggleOptionsMenu(false); });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.project-more') && !e.target.closest('.project-card-menu')) {
+      document.querySelectorAll('.project-card-menu.open').forEach(menu => menu.classList.remove('open'));
+      document.querySelectorAll('.project-card.menu-open').forEach(card => card.classList.remove('menu-open'));
+    }
+  });
+  document.getElementById('projects-grid').addEventListener('scroll', () => {
+    document.querySelectorAll('.project-card-menu.open').forEach(menu => menu.classList.remove('open'));
+    document.querySelectorAll('.project-card.menu-open').forEach(card => card.classList.remove('menu-open'));
+  }, { passive: true });
+
+  /* Project shelf and compilation */
+  document.getElementById('btn-projects').addEventListener('click', openProjects);
+  document.getElementById('new-project-btn').addEventListener('click', createProject);
+  document.getElementById('project-title-input').addEventListener('input', schedulePersist);
+  document.getElementById('compile-cancel').addEventListener('click', closeCompile);
+  document.getElementById('compile-export').addEventListener('click', exportManuscript);
+  document.getElementById('compile-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeCompile(); });
 
   /* Focus */
   document.getElementById('btn-focus').addEventListener('click', toggleFocus);
@@ -1097,6 +1910,7 @@ function setupEventListeners() {
   document.getElementById('ctx-add-child').addEventListener('click', () => {
     hideCtx();
     const parent = docs.find(d => d.id === ctxTargetId);
+    if (parent) { parent.isFolder = true; parent.collapsed = false; }
     addDoc(parent?.section || 'manuscript', ctxTargetId);
   });
 
@@ -1131,6 +1945,14 @@ function setupEventListeners() {
 
   /* Keyboard shortcuts */
   document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      document.getElementById('command-overlay').classList.contains('open') ? closeCommandPalette() : openCommandPalette();
+    }
+    if (e.ctrlKey && e.key.toLowerCase() === 't') { e.preventDefault(); setTypewriterMode(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') { e.preventDefault(); toggleProofing(); }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); openCompile(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); takeSnapshot(); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
       e.preventDefault();
       openSearch();
@@ -1142,6 +1964,9 @@ function setupEventListeners() {
     if (e.key === 'Escape') {
       if (document.body.classList.contains('focus-mode')) toggleFocus();
       closeSearch();
+      closeCommandPalette();
+      closeCompile();
+      toggleOptionsMenu(false);
     }
   });
 
@@ -1275,9 +2100,9 @@ function bookRenderSpread() {
     rightEl.style.cursor    = 'default';
     rightEl.innerHTML = `
       <div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;opacity:0.75;">
-        <div style="font-family:'EB Garamond',serif;font-size:26px;font-weight:600;color:#2A2520;letter-spacing:0.03em;margin-bottom:16px;line-height:1.2;">${chapter}</div>
-        <div style="width:50px;height:1px;background:#C4B89A;margin:0 auto 16px;"></div>
-        <div style="font-family:'DM Mono',monospace;font-size:9px;color:#9A9080;letter-spacing:0.18em;text-transform:uppercase;">Turn the page to begin</div>
+        <div style="font-family:'EB Garamond',serif;font-size:26px;font-weight:600;color:var(--text);letter-spacing:0.03em;margin-bottom:16px;line-height:1.2;">${chapter}</div>
+        <div style="width:50px;height:1px;background:var(--border);margin:0 auto 16px;"></div>
+        <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-faint);letter-spacing:0.18em;text-transform:uppercase;">Turn the page to begin</div>
       </div>`;
 
     bookUpdateWC();

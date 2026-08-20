@@ -4,14 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Folio — Writing App</title>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Mono:wght@300;400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Mono:wght@300;400&family=DM+Sans:wght@300;400;500&family=EB+Garamond:ital,wght@0,400;0,500;1,400&family=Lora:ital,wght@0,400;0,500;1,400&family=Merriweather:wght@300;400&family=Indie+Flower&family=Ewert&family=Fleur+De+Leah&family=Lavishly+Yours&family=Dancing+Script:wght@400;600&family=Crimson+Text&family=IM+Fell+English&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <!-- Titlebar -->
 <div id="titlebar">
-  <span class="app-name">Folio</span>
+  <button class="app-name" id="btn-projects" title="All projects">Folio</button>
   <div class="tb-sep"></div>
   <input id="project-title-input" value="Untitled Project" spellcheck="false">
   <div class="tb-spacer"></div>
@@ -28,11 +28,14 @@
   <button class="tb-btn" id="btn-outline">Outline</button>
   <button class="tb-btn" id="btn-timeline">Timeline</button>
   <button class="tb-btn" id="btn-board">Board</button>
+  <button class="tb-btn" id="btn-bible">Bible</button>
   <div class="tb-sep"></div>
   <button class="tb-btn" id="btn-focus" title="Focus Mode (F11)">Focus</button>
   <button class="tb-btn" id="btn-book" title="Book Mode">Book</button>
   <div class="tb-sep"></div>
   <span id="wordcount-display">0 words</span>
+  <button class="tb-btn tb-compact" id="btn-command" title="Command palette (Ctrl/Cmd+K)">⌘K</button>
+  <button class="tb-btn tb-compact" id="btn-menu" title="Writing options">⋯</button>
 </div>
 
 <!-- Workspace -->
@@ -42,8 +45,11 @@
   <div id="sidebar">
     <div class="sidebar-section">
       <div class="sidebar-section-header">
-        Manuscript
-        <button class="sidebar-add-btn" id="add-doc-btn" title="New Document">+</button>
+        <span>Manuscript</span>
+        <div class="sidebar-header-actions">
+          <button class="sidebar-add-btn" id="add-doc-btn" title="New Document">+</button>
+          <button class="panel-collapse-btn sidebar-collapse" id="sidebar-collapse" title="Collapse manuscript panel">‹</button>
+        </div>
       </div>
       <div id="doc-tree"></div>
     </div>
@@ -54,7 +60,19 @@
       </div>
       <div id="research-tree"></div>
     </div>
+    <div id="writing-session" tabindex="0" role="button" aria-expanded="false">
+      <div class="session-summary">
+        <span><span id="session-words">0</span> of <span id="session-target">1,000</span> today</span>
+        <span id="session-toggle-mark">+</span>
+      </div>
+      <div class="session-progress"><div id="session-progress-fill"></div></div>
+      <div id="session-details">
+        <div id="session-days"></div>
+        <div class="session-stats"><span>Streak <b id="session-streak">0 days</b></span><span>Best <b id="session-best">0</b></span></div>
+      </div>
+    </div>
   </div>
+  <button class="panel-rail" id="sidebar-expand" title="Show manuscript panel"><span>›</span><em>Manuscript</em></button>
 
   <!-- Editor Area -->
   <div id="editor-area">
@@ -65,7 +83,25 @@
         <option value="p">Paragraph</option>
         <option value="h1">Heading 1</option>
         <option value="h2">Heading 2</option>
+        <option value="div">Scene Break</option>
         <option value="blockquote">Blockquote</option>
+      </select>
+      <div class="fmt-sep"></div>
+      <select class="fmt-select" id="fmt-font" title="Font">
+        <option value="'Playfair Display', serif">Playfair Display</option>
+        <option value="'EB Garamond', serif">EB Garamond</option>
+        <option value="'Lora', serif">Lora</option>
+        <option value="'Merriweather', serif">Merriweather</option>
+        <option value="Georgia, serif">Georgia</option>
+        <option value="'DM Sans', sans-serif">DM Sans</option>
+        <option value="'DM Mono', monospace">DM Mono</option>
+        <option value="'Indie Flower', cursive">Indie Flower</option>
+        <option value="'Ewert', cursive">Ewert</option>
+        <option value="'Fleur De Leah', cursive">Fleur De Leah</option>
+        <option value="'Lavishly Yours', cursive">Lavishly Yours</option>
+        <option value="'Dancing Script', cursive">Dancing Script</option>
+        <option value="'Crimson Text', serif">Crimson</option>
+        <option value="'IM Fell English', serif">IM Fell English</option>
       </select>
       <div class="fmt-sep"></div>
       <button class="fmt-btn" title="Bold" data-cmd="bold"><b>B</b></button>
@@ -78,6 +114,19 @@
       <div class="fmt-sep"></div>
       <button class="fmt-btn" title="Align Left" data-cmd="justifyLeft">⇐</button>
       <button class="fmt-btn" title="Align Center" data-cmd="justifyCenter">↔</button>
+      <div class="fmt-sep"></div>
+      <button class="toolbar-text-btn" id="annotate-btn">Annotate</button>
+      <button class="toolbar-text-btn" id="snapshot-btn">Snapshot</button>
+      <div class="tb-spacer"></div>
+      <button class="toolbar-text-btn mode-toggle" id="typewriter-btn">Typewriter</button>
+      <button class="toolbar-text-btn mode-toggle" id="proofing-btn">Proofing</button>
+      <button class="toolbar-text-btn mode-toggle" id="split-btn">Split</button>
+      <button class="toolbar-text-btn mode-toggle" id="margin-btn">Notes</button>
+    </div>
+    <div id="beats-bar">
+      <span>Beats</span>
+      <div id="beats-list"></div>
+      <button id="add-beat-btn" title="Add beat">+</button>
     </div>
 
     <!-- Editor -->
@@ -98,13 +147,28 @@
           <span id="sub-wc">0 words</span>
         </div>
         <div id="editor" contenteditable="true" data-placeholder="Begin writing…" spellcheck="true"></div>
+        <button id="doc-notes-summary"></button>
 
       </div>
+      <div id="split-reference">
+        <div class="split-reference-head">
+          <label for="split-doc-select">Reference</label>
+          <select id="split-doc-select"></select>
+          <button id="split-close" title="Close split">×</button>
+        </div>
+        <div id="split-reference-title"></div>
+        <div id="split-reference-content" contenteditable="true" spellcheck="true"></div>
+      </div>
+      <aside id="margin-notes">
+        <div class="margin-notes-head"><span>Margin</span><button id="margin-note-add">Add note</button></div>
+        <div id="margin-notes-list"></div>
+      </aside>
     </div>
 
     <!-- Corkboard -->
     <div id="corkboard">
       <div class="cork-grid" id="cork-grid"></div>
+      <button id="cork-add-scene">New scene</button>
     </div>
 
     <!-- Outline -->
@@ -124,10 +188,21 @@
         <button class="board-tb-btn active" id="board-btn-thread">Red thread</button>
         <button class="board-tb-btn" id="board-btn-reset">Reset view</button>
         <span class="board-tb-sep"></span>
-        <span id="board-hint">Drag cards · Pan canvas · Click to edit</span>
+        <span id="board-hint">Drag cards · Pan canvas · Click pin to add to thread</span>
       </div>
       <div id="board-minimap">
         <canvas id="board-mm-canvas" width="110" height="70"></canvas>
+      </div>
+    </div>
+
+    <!-- World Bible -->
+    <div id="bible-view">
+      <div class="bible-wrap">
+        <div class="view-heading-row">
+          <h2>World Bible</h2>
+          <input id="bible-filter" placeholder="Filter entities…" autocomplete="off">
+        </div>
+        <div id="bible-groups"></div>
       </div>
     </div>
 
@@ -167,6 +242,15 @@
   <!-- Inspector -->
   <div id="inspector">
 
+    <div id="inspector-tabs">
+      <button class="inspector-tab active" data-panel="scene">Scene</button>
+      <button class="inspector-tab" data-panel="history">History</button>
+      <button class="inspector-tab" data-panel="notes">Notes</button>
+      <button id="inspector-collapse" title="Collapse inspector">›</button>
+    </div>
+
+    <div class="inspector-panel active" id="inspector-scene-panel">
+
     <div class="inspector-section">
       <div class="inspector-label">Synopsis</div>
       <textarea class="inspector-textarea" id="synopsis-area" placeholder="Brief description of this section…" rows="4"></textarea>
@@ -179,6 +263,11 @@
         <option value="revision">In Revision</option>
         <option value="final">Final</option>
       </select>
+      <div id="status-segmented">
+        <button data-status="draft">Draft</button>
+        <button data-status="revision">Revision</button>
+        <button data-status="final">Final</button>
+      </div>
     </div>
 
     <div class="inspector-section">
@@ -206,6 +295,7 @@
       <div class="inspector-row"><span>Words</span><span id="stat-words">0</span></div>
       <div class="inspector-row"><span>Characters</span><span id="stat-chars">0</span></div>
       <div class="inspector-row"><span>Paragraphs</span><span id="stat-paras">0</span></div>
+      <div class="inspector-row"><span>Sentences</span><span id="stat-sentences">0</span></div>
       <div class="inspector-row"><span>Read time</span><span id="stat-read">0 min</span></div>
     </div>
 
@@ -220,7 +310,26 @@
       <div class="inspector-row"><span>Documents</span><span id="total-docs">0</span></div>
     </div>
 
+    </div><!-- /scene panel -->
+
+    <div class="inspector-panel" id="inspector-history-panel">
+      <div class="inspector-section panel-action-row">
+        <div class="inspector-label">Snapshots</div>
+        <button class="panel-action-btn" id="take-snapshot">Take one</button>
+      </div>
+      <div id="snapshot-list"></div>
+    </div>
+
+    <div class="inspector-panel" id="inspector-notes-panel">
+      <div class="inspector-section panel-action-row">
+        <div class="inspector-label">Margin Notes</div>
+        <div class="panel-actions"><button class="panel-action-btn" id="margin-toggle">Show in margin</button><button class="panel-action-btn" id="add-note">Add note</button></div>
+      </div>
+      <div id="notes-list"></div>
+    </div>
+
   </div><!-- /inspector -->
+  <button class="panel-rail inspector-rail" id="inspector-expand" title="Show inspector"><span>‹</span><em>Synopsis</em></button>
 
 </div><!-- /workspace -->
 
@@ -241,6 +350,68 @@
   <div id="search-box">
     <input id="search-input" placeholder="Search documents…" autocomplete="off">
     <div id="search-results"></div>
+  </div>
+</div>
+
+<!-- Command Palette -->
+<div id="command-overlay" class="utility-overlay">
+  <div id="command-dialog" role="dialog" aria-modal="true" aria-label="Command palette">
+    <div class="command-input-row">
+      <span>›</span>
+      <input id="command-input" placeholder="Type a command or document name…" autocomplete="off">
+      <kbd>⌘K</kbd>
+    </div>
+    <div id="command-results"></div>
+    <div class="command-help">↑↓ to move · Enter to run · Esc to dismiss</div>
+  </div>
+</div>
+
+<!-- Writing Options Menu -->
+<div id="options-menu" role="menu">
+  <div class="options-group-label">Writing</div>
+  <button data-option="typewriter"><span>Typewriter scroll</span><kbd>Ctrl+T</kbd></button>
+  <button data-option="proofing"><span>Proofing pass</span><kbd>Ctrl+R</kbd></button>
+  <button data-option="beats"><span>Beat sheet</span><i></i></button>
+  <button data-option="template"><span>Apply Three-Act beats</span><i></i></button>
+  <button data-option="split"><span>Split reference</span><i></i></button>
+  <button data-option="margin"><span>Margin notes</span><i></i></button>
+  <div class="options-group-label">Project</div>
+  <button data-option="compile"><span>Compile &amp; export…</span><kbd>⇧⌘E</kbd></button>
+  <button data-option="snapshot"><span>Take snapshot</span><kbd>⌘S</kbd></button>
+  <button data-option="book"><span>Book mode</span><i></i></button>
+  <button data-option="focus"><span>Focus mode</span><kbd>F11</kbd></button>
+</div>
+
+<!-- Projects Shelf -->
+<div id="projects-overlay">
+  <div class="projects-header">
+    <span class="projects-title">Folio</span>
+    <span id="projects-summary"></span>
+    <button id="new-project-btn">New project</button>
+  </div>
+  <div id="projects-grid"></div>
+</div>
+
+<!-- Compile Dialog -->
+<div id="compile-overlay" class="utility-overlay">
+  <div id="compile-dialog" role="dialog" aria-modal="true" aria-labelledby="compile-title">
+    <div class="compile-header">
+      <h2 id="compile-title">Compile manuscript</h2>
+      <span id="compile-summary"></span>
+    </div>
+    <div class="compile-options">
+      <label><input type="radio" name="compile-format" value="standard" checked> Standard manuscript</label>
+      <label><input type="radio" name="compile-format" value="paperback"> Paperback</label>
+      <label><input type="radio" name="compile-format" value="txt"> Plain text</label>
+      <label><input type="checkbox" id="compile-drafts" checked> Include drafts</label>
+      <label><input type="checkbox" id="compile-titles" checked> Include scene titles</label>
+      <label><input type="checkbox" id="compile-breaks" checked> Scene-break ornaments</label>
+      <label><input type="checkbox" id="compile-notes"> Margin notes and annotations</label>
+    </div>
+    <div class="compile-actions">
+      <button id="compile-cancel">Cancel</button>
+      <button id="compile-export">Compile &amp; export</button>
+    </div>
   </div>
 </div>
 
@@ -304,7 +475,7 @@
             <span class="book-chapter-label" id="book-left-chapter">Chapter One</span>
             <span class="book-page-num" id="book-left-num">1</span>
           </div>
-          <div class="book-page-content" id="book-left-content" contenteditable="true" spellcheck="true" style="outline:none;cursor:text;caret-color:#8B6914;"></div>
+          <div class="book-page-content" id="book-left-content" contenteditable="true" spellcheck="true" style="outline:none;cursor:text;caret-color:var(--accent);"></div>
           <div class="book-page-footer"><span class="book-ornament">· · ·</span></div>
         </div>
       </div>

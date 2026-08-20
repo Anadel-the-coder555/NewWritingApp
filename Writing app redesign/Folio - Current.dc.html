@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Mono:wght@300;400&family=DM+Sans:wght@300;400;500&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:#F5F2ED;color:#1A1915;font-size:14px;overflow:hidden}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#DDD9D0;border-radius:3px}
+a{color:#C9462A}a:hover{color:#A5361F}
+#editor:empty::before{content:attr(data-placeholder);color:#B0ADA5;font-style:italic}
+#editor p{margin-bottom:1em}
+#editor blockquote{border-left:3px solid #C9462A;padding-left:16px;color:#7A776E;font-style:italic;margin:1em 0}
+.bk p{margin-bottom:0;text-indent:1.5em}.bk p:first-child{text-indent:0}
+</style>
+</helmet>
+
+<div style="height:100vh;display:flex;flex-direction:column;overflow:hidden;background:#F5F2ED">
+
+  <sc-if value="{{ showChrome }}" hint-placeholder-val="{{ true }}">
+  <div style="height:44px;background:#FDFCFA;border-bottom:1px solid #DDD9D0;display:flex;align-items:center;padding:0 16px;gap:12px;flex-shrink:0;user-select:none">
+    <span style="font-family:'Playfair Display',serif;font-size:18px;letter-spacing:-0.02em;color:#1A1915;margin-right:8px">Folio</span>
+    <div style="width:1px;height:20px;background:#DDD9D0"></div>
+    <input value="The Long Winter" spellcheck="false" style="font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;border:none;background:transparent;color:#7A776E;outline:none;width:160px;text-align:center">
+    <div style="flex:1"></div>
+    <button onClick="{{ openSearch }}" style="height:28px;padding:0 10px;border:1px solid #DDD9D0;border-radius:6px;background:transparent;color:#7A776E;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap" style-hover="background:#F0EDE8;color:#1A1915">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7" cy="7" r="5"></circle><path d="m11 11 3 3"></path></svg>
+      Search
+    </button>
+    <div style="width:1px;height:20px;background:#DDD9D0"></div>
+    <sc-for list="{{ viewTabs }}" as="t" hint-placeholder-count="5">
+      <button onClick="{{ t.go }}" style="height:28px;padding:0 10px;border:1px solid {{ t.bc }};border-radius:6px;background:{{ t.bg }};color:{{ t.fg }};font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;display:flex;align-items:center;white-space:nowrap">{{ t.label }}</button>
+    </sc-for>
+    <div style="width:1px;height:20px;background:#DDD9D0"></div>
+    <button onClick="{{ enterFocus }}" style="height:28px;padding:0 10px;border:1px solid #DDD9D0;border-radius:6px;background:transparent;color:#7A776E;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer" style-hover="background:#F0EDE8;color:#1A1915">Focus</button>
+    <button onClick="{{ openBook }}" style="height:28px;padding:0 10px;border:1px solid #DDD9D0;border-radius:6px;background:transparent;color:#7A776E;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer" style-hover="background:#F0EDE8;color:#1A1915">Book</button>
+    <div style="width:1px;height:20px;background:#DDD9D0"></div>
+    <span style="font-family:'DM Mono',monospace;font-size:11px;color:#B0ADA5;letter-spacing:0.03em">5,132 words</span>
+  </div>
+  </sc-if>
+
+  <div style="flex:1;display:flex;overflow:hidden">
+
+    <sc-if value="{{ showChrome }}" hint-placeholder-val="{{ true }}">
+    <div style="width:240px;background:#FDFCFA;border-right:1px solid #DDD9D0;display:flex;flex-direction:column;flex-shrink:0;overflow:hidden">
+      <div style="padding:10px 0;border-bottom:1px solid #E8E4DE">
+        <div style="padding:4px 14px 6px;font-size:10px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:#B0ADA5;display:flex;align-items:center;justify-content:space-between">
+          Manuscript
+          <button style="width:18px;height:18px;border:none;background:transparent;color:#B0ADA5;font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:4px" style-hover="background:#F0EDE8;color:#1A1915">+</button>
+        </div>
+        <div style="padding-bottom:8px">
+          <sc-for list="{{ docs }}" as="d" hint-placeholder-count="6">
+            <div onClick="{{ d.select }}" style="display:flex;align-items:center;padding:5px 14px 5px {{ d.pad }};gap:7px;cursor:pointer;position:relative;background:{{ d.rowBg }}">
+              <span style="font-size:13px;width:16px;text-align:center;flex-shrink:0">{{ d.icon }}</span>
+              <span style="font-size:13px;color:{{ d.nameColor }};font-weight:{{ d.nameWeight }};flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ d.name }}</span>
+              <span style="font-family:'DM Mono',monospace;font-size:10px;color:#B0ADA5">{{ d.wc }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding:10px 0">
+        <div style="padding:4px 14px 6px;font-size:10px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:#B0ADA5;display:flex;align-items:center;justify-content:space-between">
+          Research
+          <button style="width:18px;height:18px;border:none;background:transparent;color:#B0ADA5;font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:4px" style-hover="background:#F0EDE8;color:#1A1915">+</button>
+        </div>
+        <sc-for list="{{ research }}" as="r" hint-placeholder-count="4">
+          <div onClick="{{ r.select }}" style="display:flex;align-items:center;padding:5px 14px;gap:7px;cursor:pointer" style-hover="background:#F0EDE8">
+            <span style="font-size:13px;width:16px;text-align:center;flex-shrink:0">{{ r.icon }}</span>
+            <span style="font-size:13px;color:#1A1915;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.name }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:#F5F2ED">
+
+      <sc-if value="{{ isEditor }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;flex:1;overflow:hidden">
+        <sc-if value="{{ showChrome }}" hint-placeholder-val="{{ true }}">
+        <div style="height:36px;background:#FDFCFA;border-bottom:1px solid #DDD9D0;display:flex;align-items:center;padding:0 12px;gap:4px;flex-shrink:0">
+          <select style="height:26px;border:1px solid #DDD9D0;border-radius:5px;background:transparent;font-size:12px;font-family:'DM Sans',sans-serif;color:#7A776E;padding:0 6px;outline:none;cursor:pointer">
+            <option>Paragraph</option><option>Heading 1</option><option>Heading 2</option><option>Blockquote</option>
+          </select>
+          <div style="width:1px;height:18px;background:#DDD9D0;margin:0 4px"></div>
+          <button style="width:28px;height:26px;border:none;border-radius:5px;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;color:#7A776E;font-family:'DM Sans',sans-serif" style-hover="background:#F0EDE8;color:#1A1915"><b>B</b></button>
+          <button style="width:28px;height:26px;border:none;border-radius:5px;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;color:#7A776E" style-hover="background:#F0EDE8;color:#1A1915"><i>I</i></button>
+          <button style="width:28px;height:26px;border:none;border-radius:5px;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;color:#7A776E" style-hover="background:#F0EDE8;color:#1A1915"><u>U</u></button>
+          <button style="width:28px;height:26px;border:none;border-radius:5px;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;color:#7A776E" style-hover="background:#F0EDE8;color:#1A1915"><s>S</s></button>
+          <div style="width:1px;height:18px;background:#DDD9D0;margin:0 4px"></div>
+          <button style="width:28px;height:26px;border:none;border-radius:5px;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;color:#7A776E" style-hover="background:#F0EDE8;color:#1A1915">☰</button>
+          <button style="width:28px;height:26px;border:none;border-radius:5px;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;color:#7A776E" style-hover="background:#F0EDE8;color:#1A1915">№</button>
+          <div style="width:1px;height:18px;background:#DDD9D0;margin:0 4px"></div>
+          <button style="width:28px;height:26px;border:none;border-radius:5px;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;color:#7A776E" style-hover="background:#F0EDE8;color:#1A1915">⇐</button>
+          <button style="width:28px;height:26px;border:none;border-radius:5px;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;color:#7A776E" style-hover="background:#F0EDE8;color:#1A1915">↔</button>
+        </div>
+        </sc-if>
+
+        <div style="flex:1;overflow-y:auto;display:flex;justify-content:center;padding:{{ scrollPad }}">
+          <div style="width:100%;max-width:680px">
+            <sc-if value="{{ showChrome }}" hint-placeholder-val="{{ true }}">
+            <div style="width:100%;height:220px;background-color:#F0EDE8;border:2px dashed #DDD9D0;border-radius:8px;margin-bottom:24px;cursor:pointer;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden">
+              <div style="font-size:12px;color:#B0ADA5;pointer-events:none">Click to add a banner image</div>
+            </div>
+            </sc-if>
+            <input value="Ash on the Sill" spellcheck="false" style="font-family:'Playfair Display',serif;font-size:{{ titleSize }};font-weight:600;color:#1A1915;border:none;background:transparent;outline:none;width:100%;margin-bottom:6px;letter-spacing:-0.02em;line-height:1.2">
+            <div style="font-size:12px;color:#B0ADA5;font-family:'DM Mono',monospace;margin-bottom:28px;display:flex;gap:14px">
+              <span>14 Feb 2026</span><span>1,842 words</span>
+            </div>
+            <div id="editor" contenteditable="true" data-placeholder="Begin writing…" spellcheck="true" style="min-height:420px;outline:none;font-family:'Playfair Display',serif;font-size:{{ bodySize }};line-height:{{ bodyLh }};color:#1A1915;caret-color:#C9462A">
+              <p>The ferry did not come at six, and Sarah understood then that the winter had arrived in the way winters arrive here — not with snow but with cancellation, with the small municipal admissions that nothing further would be leaving tonight.</p>
+              <p>She waited anyway. There was ash on the sill of the terminal window, from the burn pits across the water, and she wrote her name in it with one finger and then wiped it out again.</p>
+              <blockquote>Tomas said the crossing takes forty minutes in good weather. He had never once described the weather as good.</blockquote>
+              <p>By seven the ticket agent had gone home. The lights above the ramp stayed on, tuned to that particular yellow that makes everyone underneath it look like they have already left.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isCork }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;overflow-y:auto;padding:32px;background:#F5F2ED">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:20px;max-width:900px;margin:0 auto">
+          <sc-for list="{{ cards }}" as="c" hint-placeholder-count="5">
+            <div style="background:#FFFEF5;border:1px solid #E0DC8C;border-radius:2px;padding:16px;box-shadow:2px 3px 0 rgba(0,0,0,0.08),0 0 0 1px rgba(0,0,0,0.04);cursor:pointer;position:relative;min-height:160px;transform:rotate({{ c.rot }})" style-hover="transform:rotate(0deg) scale(1.03);box-shadow:4px 6px 0 rgba(0,0,0,0.12);z-index:1">
+              <div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);width:14px;height:14px;border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,0.3);background:{{ c.color }}"></div>
+              <div style="font-family:'Playfair Display',serif;font-size:14px;font-weight:600;color:#2A2820;margin-bottom:8px;margin-top:4px">{{ c.name }}</div>
+              <div style="font-size:11.5px;color:#6B6750;line-height:1.6">{{ c.synopsis }}</div>
+              <div style="margin-top:10px;font-size:10px;color:#A09D8C;font-family:'DM Mono',monospace;display:flex;justify-content:space-between">
+                <span>{{ c.wc }}</span>
+                <span><span style="width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px;background:{{ c.color }}"></span>{{ c.status }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isOutline }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;overflow-y:auto;padding:32px;background:#F5F2ED">
+        <div style="max-width:700px;margin:0 auto">
+          <sc-for list="{{ cards }}" as="c" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;padding:8px 12px;gap:10px;border-bottom:1px solid #E8E4DE;cursor:pointer;border-radius:6px;background:{{ c.rowBg }}" style-hover="background:#FDFCFA">
+              <span style="font-family:'DM Mono',monospace;font-size:11px;color:#B0ADA5;width:22px;flex-shrink:0">{{ c.num }}</span>
+              <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:{{ c.color }}"></span>
+              <span style="flex:1;font-size:14px">{{ c.name }}</span>
+              <span style="font-family:'DM Mono',monospace;font-size:11px;color:#B0ADA5">{{ c.wc }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isTimeline }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;overflow:auto;padding:40px 32px;background:#F5F2ED">
+        <div style="min-width:600px;position:relative;padding-bottom:32px">
+          <div style="display:flex;gap:24px;align-items:flex-start;padding:0 0 24px">
+            <sc-for list="{{ cards }}" as="c" hint-placeholder-count="4">
+              <div style="display:flex;flex-direction:column;align-items:center;cursor:pointer;flex-shrink:0;width:160px">
+                <div style="font-family:'DM Mono',monospace;font-size:10px;color:#B0ADA5;margin-bottom:8px;text-align:center">{{ c.date }}</div>
+                <div style="width:10px;height:10px;border-radius:50%;margin-bottom:8px;flex-shrink:0;background:{{ c.color }}"></div>
+                <div style="background:{{ c.tlBg }};border:1px solid {{ c.tlBorder }};border-radius:8px;padding:12px;width:100%">
+                  <div style="font-family:'DM Mono',monospace;font-size:10px;color:#B0ADA5;margin-bottom:4px">{{ c.num }}</div>
+                  <div style="font-size:13px;font-weight:500;color:#1A1915;margin-bottom:6px">{{ c.name }}</div>
+                  <div style="font-family:'DM Mono',monospace;font-size:10px;color:#B0ADA5">{{ c.wc }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="height:2px;background:#DDD9D0;width:100%"></div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isBoard }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;position:relative;overflow:hidden;background-color:#1C1A17;background-image:radial-gradient(circle,#2A2820 1px,transparent 1px);background-size:24px 24px">
+        <div style="position:absolute;top:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;z-index:20;background:rgba(14,12,10,0.88);border:1px solid #2A2820;border-radius:20px;padding:5px 14px;white-space:nowrap">
+          <button style="font-family:'DM Mono',monospace;font-size:9px;color:#fff;background:#C9462A;border:1px solid #C9462A;border-radius:10px;padding:3px 10px;cursor:pointer;letter-spacing:0.06em;text-transform:uppercase">Red thread</button>
+          <button style="font-family:'DM Mono',monospace;font-size:9px;color:#6B6750;background:transparent;border:1px solid #2A2820;border-radius:10px;padding:3px 10px;cursor:pointer;letter-spacing:0.06em;text-transform:uppercase" style-hover="background:#2A2820;color:#C9B99A">Reset view</button>
+          <span style="width:1px;height:14px;background:#2A2820;flex-shrink:0"></span>
+          <span style="font-family:'DM Mono',monospace;font-size:9px;color:#3A3830;letter-spacing:0.08em;text-transform:uppercase">Drag cards · Pan canvas · Click to edit</span>
+        </div>
+        <sc-for list="{{ boardCards }}" as="b" hint-placeholder-count="4">
+          <div style="position:absolute;left:{{ b.x }};top:{{ b.y }};width:200px;background:#F5F2ED;border-radius:3px;overflow:hidden;cursor:grab;z-index:5;box-shadow:3px 4px 14px rgba(0,0,0,0.6),0 0 0 1px rgba(0,0,0,0.3)" style-hover="box-shadow:5px 8px 28px rgba(0,0,0,0.75)">
+            <div style="background:#1A1915;padding:8px 10px;display:flex;align-items:center;gap:7px">
+              <span style="font-family:'DM Mono',monospace;font-size:8px;color:#4A4840;letter-spacing:0.08em;flex-shrink:0">{{ b.num }}</span>
+              <span style="font-family:'Playfair Display',serif;font-size:11px;color:#C9B99A;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ b.name }}</span>
+              <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:{{ b.color }}"></span>
+            </div>
+            <div style="width:100%;height:100px;background:#E8E4DC;display:flex;align-items:center;justify-content:center">
+              <span style="font-family:'DM Mono',monospace;font-size:9px;color:#B0ADA5;letter-spacing:0.08em">no image</span>
+            </div>
+            <div style="padding:8px 10px">
+              <div style="font-family:'DM Mono',monospace;font-size:8px;color:#B0ADA5;letter-spacing:0.05em;margin-bottom:4px">{{ b.date }}</div>
+              <div style="font-size:10px;color:#5A5748;line-height:1.5">{{ b.synopsis }}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:5px;padding:5px 10px 8px;border-top:1px solid #E8E4DE">
+              <span style="font-family:'DM Mono',monospace;font-size:8px;color:#B0ADA5;flex:1">{{ b.wc }}</span>
+              <span style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:{{ b.color }}"></span>
+              <span style="font-family:'DM Mono',monospace;font-size:8px;color:#B0ADA5;letter-spacing:0.04em">{{ b.status }}</span>
+            </div>
+          </div>
+        </sc-for>
+        <div style="position:absolute;bottom:14px;right:14px;width:110px;height:70px;background:rgba(10,9,7,0.85);border:1px solid #2A2820;border-radius:4px;z-index:20;overflow:hidden"></div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isChar }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;overflow-y:auto;padding:40px;gap:32px;background:#F5F2ED;display:flex">
+        <div style="display:flex;flex-direction:column;gap:14px;width:180px;flex-shrink:0">
+          <div style="width:100%;height:180px;border:1px dashed #DDD9D0;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#B0ADA5;font-size:11px;background-color:#FDFCFA">Add photo</div>
+          <div style="width:100%;height:110px;border:1px dashed #DDD9D0;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#B0ADA5;font-size:11px;background-color:#FDFCFA">Add mood / inspo</div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;max-width:620px;min-width:0">
+          <input value="Sarah Ellwood" spellcheck="false" style="font-family:'Playfair Display',serif;font-size:28px;font-weight:600;color:#1A1915;border:none;background:transparent;outline:none;width:100%;letter-spacing:-0.02em">
+          <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:#B0ADA5;margin-top:24px;margin-bottom:10px">Physical appearance</div>
+          <textarea style="flex:1;min-height:320px;border:1px solid #DDD9D0;border-radius:8px;background:#FDFCFA;color:#1A1915;font-family:'DM Sans',sans-serif;font-size:14px;line-height:1.7;padding:16px;resize:none;outline:none">Tall, stooped from a decade of desks. Grey wool coat she refuses to replace. Left hand always in a pocket.</textarea>
+        </div>
+        <div style="width:140px;flex-shrink:0;display:flex;flex-direction:column;gap:2px">
+          <sc-for list="{{ charTabs }}" as="t" hint-placeholder-count="10">
+            <div style="padding:8px 12px;border-radius:6px;font-size:12px;color:{{ t.fg }};background:{{ t.bg }};font-weight:{{ t.fw }};cursor:pointer">{{ t.label }}</div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+    </div>
+
+    <sc-if value="{{ showInspector }}" hint-placeholder-val="{{ true }}">
+    <div style="width:220px;background:#FDFCFA;border-left:1px solid #DDD9D0;display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto">
+      <div style="padding:14px;border-bottom:1px solid #E8E4DE">
+        <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:#B0ADA5;margin-bottom:8px">Synopsis</div>
+        <textarea rows="4" style="width:100%;border:1px solid #DDD9D0;border-radius:6px;background:#F5F2ED;font-size:12px;font-family:'DM Sans',sans-serif;color:#1A1915;padding:8px;resize:none;outline:none;line-height:1.5;min-height:80px">Sarah misses the last ferry and decides not to go home.</textarea>
+      </div>
+      <div style="padding:14px;border-bottom:1px solid #E8E4DE">
+        <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:#B0ADA5;margin-bottom:8px">Status</div>
+        <select style="width:100%;border:1px solid #DDD9D0;border-radius:6px;background:#F5F2ED;font-size:12px;font-family:'DM Sans',sans-serif;color:#1A1915;padding:6px 8px;outline:none">
+          <option>In Revision</option><option>Draft</option><option>Final</option>
+        </select>
+      </div>
+      <div style="padding:14px;border-bottom:1px solid #E8E4DE">
+        <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:#B0ADA5;margin-bottom:8px">Word Target</div>
+        <input type="number" value="2500" style="width:100%;border:1px solid #DDD9D0;border-radius:6px;background:#F5F2ED;font-size:12px;font-family:'DM Mono',monospace;color:#1A1915;padding:6px 8px;outline:none;text-align:right">
+        <div style="height:4px;background:#DDD9D0;border-radius:2px;margin-top:6px;overflow:hidden">
+          <div style="height:100%;background:#C9462A;border-radius:2px;width:74%"></div>
+        </div>
+      </div>
+      <div style="padding:14px;border-bottom:1px solid #E8E4DE">
+        <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:#B0ADA5;margin-bottom:8px">Story Date</div>
+        <input type="date" value="2026-02-14" style="width:100%;border:1px solid #DDD9D0;border-radius:6px;background:#F5F2ED;font-size:12px;font-family:'DM Mono',monospace;color:#1A1915;padding:6px 8px;outline:none;text-align:right">
+      </div>
+      <div style="padding:14px;border-bottom:1px solid #E8E4DE">
+        <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:#B0ADA5;margin-bottom:8px">Tags</div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px">
+          <span style="padding:2px 8px;border-radius:20px;background:#F0EDE8;border:1px solid #DDD9D0;font-size:11px;color:#7A776E;cursor:pointer;display:flex;align-items:center;gap:4px">winter <span style="color:#B0ADA5;font-size:13px;line-height:1">×</span></span>
+          <span style="padding:2px 8px;border-radius:20px;background:#F0EDE8;border:1px solid #DDD9D0;font-size:11px;color:#7A776E;cursor:pointer;display:flex;align-items:center;gap:4px">harbor <span style="color:#B0ADA5;font-size:13px;line-height:1">×</span></span>
+          <input placeholder="Add tag…" style="border:none;background:transparent;font-size:11px;font-family:'DM Sans',sans-serif;color:#1A1915;outline:none;width:80px;padding:2px 4px">
+        </div>
+      </div>
+      <div style="padding:14px;border-bottom:1px solid #E8E4DE">
+        <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:#B0ADA5;margin-bottom:8px">Statistics</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:12px"><span style="color:#7A776E">Words</span><span style="font-family:'DM Mono',monospace;font-size:11px">1,842</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:12px"><span style="color:#7A776E">Characters</span><span style="font-family:'DM Mono',monospace;font-size:11px">10,431</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:12px"><span style="color:#7A776E">Paragraphs</span><span style="font-family:'DM Mono',monospace;font-size:11px">28</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:12px"><span style="color:#7A776E">Read time</span><span style="font-family:'DM Mono',monospace;font-size:11px">8 min</span></div>
+      </div>
+      <div style="padding:14px;border-bottom:1px solid #E8E4DE">
+        <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:#B0ADA5;margin-bottom:8px">Mentions</div>
+        <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid #DDD9D0;border-radius:6px;margin-bottom:5px;cursor:pointer" style-hover="background:#F0EDE8">
+          <span style="font-size:9px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#C9462A;background:#FDF2EF;padding:1px 5px;border-radius:4px">character</span>
+          <span style="font-size:12px;color:#1A1915">Sarah</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid #DDD9D0;border-radius:6px;margin-bottom:5px;cursor:pointer" style-hover="background:#F0EDE8">
+          <span style="font-size:9px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#C9462A;background:#FDF2EF;padding:1px 5px;border-radius:4px">character</span>
+          <span style="font-size:12px;color:#1A1915">Tomas</span>
+        </div>
+      </div>
+      <div style="padding:14px">
+        <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:#B0ADA5;margin-bottom:8px">Project Total</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:12px"><span style="color:#7A776E">All words</span><span style="font-family:'DM Mono',monospace;font-size:11px">5,132</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px"><span style="color:#7A776E">Documents</span><span style="font-family:'DM Mono',monospace;font-size:11px">4</span></div>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+
+  <sc-if value="{{ focus }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ exitFocus }}" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(26,25,21,0.7);color:#fff;padding:6px 14px;border-radius:20px;font-size:12px;cursor:pointer;z-index:100;backdrop-filter:blur(4px)">Press Esc or click to exit focus</div>
+  </sc-if>
+
+  <sc-if value="{{ search }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ closeSearch }}" style="position:fixed;inset:0;background:rgba(26,25,21,0.4);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding-top:80px">
+    <div style="background:#FDFCFA;border:1px solid #DDD9D0;border-radius:10px;width:480px;box-shadow:0 16px 48px rgba(0,0,0,0.2);overflow:hidden">
+      <input placeholder="Search documents…" value="ferry" style="width:100%;border:none;background:transparent;font-size:16px;font-family:'DM Sans',sans-serif;color:#1A1915;padding:14px 16px;outline:none">
+      <div style="padding:10px 16px;cursor:pointer;border-top:1px solid #E8E4DE">
+        <div style="font-size:13px;font-weight:500">The Ferry at Dusk</div>
+        <div style="font-size:12px;color:#7A776E;margin-top:2px">…the <span style="background:#FFF3CD;border-radius:2px">ferry</span> did not come at six…</div>
+      </div>
+      <div style="padding:10px 16px;cursor:pointer;border-top:1px solid #E8E4DE">
+        <div style="font-size:13px;font-weight:500">Harborview Terminal</div>
+        <div style="font-size:12px;color:#7A776E;margin-top:2px">…last <span style="background:#FFF3CD;border-radius:2px">ferry</span> departs 18:05 in winter…</div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ book }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;background:#1A1510;z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden">
+    <div style="position:absolute;inset:0;background-color:#1A1510;background-image:repeating-linear-gradient(90deg,transparent,transparent 120px,rgba(0,0,0,0.04) 120px,rgba(0,0,0,0.04) 121px),repeating-linear-gradient(0deg,transparent,transparent 80px,rgba(0,0,0,0.04) 80px,rgba(0,0,0,0.04) 81px)"></div>
+    <div style="position:absolute;top:-100px;left:50%;transform:translateX(-50%);width:700px;height:500px;background:radial-gradient(ellipse at 50% 0%,rgba(255,220,140,0.13) 0%,rgba(255,200,100,0.06) 40%,transparent 70%);pointer-events:none;z-index:1"></div>
+    <div style="position:relative;z-index:5;perspective:2000px;margin-top:10px">
+      <div style="width:960px;height:640px;position:relative;filter:drop-shadow(0 24px 60px rgba(0,0,0,0.95))">
+        <div style="position:absolute;top:0;left:0;width:480px;height:640px;overflow:hidden;border-radius:4px 0 0 4px;background:linear-gradient(to right,#EDE8DC,#FDFBF6);box-shadow:inset -6px 0 16px rgba(0,0,0,0.1)">
+          <div style="position:relative;height:100%;padding:22px 38px 20px;display:flex;flex-direction:column;z-index:2">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:8px;border-bottom:0.5px solid #CECA8A50">
+              <span style="font-family:'EB Garamond',serif;font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:#9A9080;font-style:italic">Chapter One</span>
+              <span style="font-family:'DM Mono',monospace;font-size:9px;color:#B0A898;letter-spacing:0.1em">1</span>
+            </div>
+            <div class="bk" style="flex:1;font-family:'EB Garamond',serif;font-size:14px;line-height:1.5;color:#2A2520;overflow:hidden">
+              <p>The ferry did not come at six, and Sarah understood then that the winter had arrived in the way winters arrive here — not with snow but with cancellation, with the small municipal admissions that nothing further would be leaving tonight.</p>
+              <p>She waited anyway. There was ash on the sill of the terminal window, from the burn pits across the water, and she wrote her name in it with one finger and then wiped it out again.</p>
+            </div>
+            <div style="margin-top:10px;padding-top:8px;border-top:0.5px solid #CECA8A50;display:flex;justify-content:center"><span style="font-size:11px;color:#C4B89A;letter-spacing:0.3em">· · ·</span></div>
+          </div>
+        </div>
+        <div style="position:absolute;top:0;right:0;width:480px;height:640px;overflow:hidden;border-radius:0 4px 4px 0;background:linear-gradient(to left,#EDE8DC,#FDFBF6);box-shadow:inset 6px 0 16px rgba(0,0,0,0.1)">
+          <div style="position:relative;height:100%;padding:22px 38px 20px;display:flex;flex-direction:column;z-index:2">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:8px;border-bottom:0.5px solid #CECA8A50">
+              <span style="font-family:'EB Garamond',serif;font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:#9A9080;font-style:italic">Chapter One</span>
+              <span style="font-family:'DM Mono',monospace;font-size:9px;color:#B0A898;letter-spacing:0.1em">2</span>
+            </div>
+            <div class="bk" contenteditable="true" style="flex:1;outline:none;font-family:'EB Garamond',serif;font-size:14px;line-height:1.5;color:#2A2520;caret-color:#8B6914;overflow:hidden;cursor:text">
+              <p>By seven the ticket agent had gone home. The lights above the ramp stayed on, tuned to that particular yellow that makes everyone underneath it look like they have already left.</p>
+            </div>
+            <div style="margin-top:10px;padding-top:8px;border-top:0.5px solid #CECA8A50;display:flex;justify-content:center"><span style="font-size:11px;color:#C4B89A;letter-spacing:0.3em">· · ·</span></div>
+          </div>
+          <div style="position:absolute;bottom:0;right:0;width:0;height:0;border-style:solid;border-width:0 0 32px 32px;border-color:transparent transparent #D4CBBA transparent;opacity:0.5;cursor:pointer;z-index:15"></div>
+        </div>
+        <div style="position:absolute;left:479px;top:0;width:2px;height:100%;background:linear-gradient(to right,#C4B89A,#E8DFC8,#C4B89A);z-index:10;box-shadow:0 0 8px rgba(0,0,0,0.4)"></div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;margin-top:18px;z-index:10">
+      <button style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:#6B6050;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:0.1em;padding:5px 14px;cursor:pointer;text-transform:uppercase">← Prev</button>
+      <span style="font-family:'DM Mono',monospace;font-size:10px;color:#4A4038;letter-spacing:0.1em">Pages 1 – 2</span>
+      <button style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:#6B6050;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:0.1em;padding:5px 14px;cursor:pointer;text-transform:uppercase">Next →</button>
+      <span style="font-family:'DM Mono',monospace;font-size:9px;color:#3A3028;letter-spacing:0.06em">1,842 words</span>
+      <button onClick="{{ closeBook }}" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:#6B6050;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:0.1em;padding:5px 14px;cursor:pointer;text-transform:uppercase">Close ✕</button>
+    </div>
+  </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const S = { draft: '#B0ADA5', revision: '#E6A820', final: '#4CAF50' };
+
+const DOCS = [
+  { id: 1, icon: '📁', name: 'Part One: The Long Winter', wc: '5,132', depth: 0 },
+  { id: 2, icon: '📄', name: 'Ash on the Sill', wc: '1,842', depth: 1, status: 'revision', date: '14 Feb', synopsis: 'Sarah misses the last ferry and decides not to go home.' },
+  { id: 3, icon: '📄', name: 'The Ferry at Dusk', wc: '2,310', depth: 1, status: 'draft', date: '15 Feb', synopsis: 'The crossing, and what Tomas will not say about the burn pits.' },
+  { id: 4, icon: '📄', name: 'What Elena Knew', wc: '980', depth: 1, status: 'final', date: '19 Feb', synopsis: 'Elena has kept the ledger for eleven years. She hands it over.' },
+  { id: 5, icon: '📁', name: 'Part Two: Thaw', wc: '0', depth: 0 },
+  { id: 6, icon: '📄', name: 'Brass and Salt', wc: '0', depth: 1, status: 'draft', date: '—', synopsis: '' }
+];
+
+const RESEARCH = [
+  { icon: '🧍', name: 'Sarah Ellwood' },
+  { icon: '🧍', name: 'Tomas Vry' },
+  { icon: '📍', name: 'Harborview Terminal' },
+  { icon: '🗒️', name: 'Winter research' }
+];
+
+const CHAR_TABS = ['Physical', 'Role', 'Goal', 'Personality', 'Occupation', 'Habits', 'Background', 'Internal', 'External', 'Notes'];
+
+class Component extends DCLogic {
+  state = { view: 'editor', focus: false, book: false, search: false, activeId: 2, charTab: 'Physical' };
+
+  set(k, v) { this.setState({ [k]: v }); }
+
+  renderVals() {
+    const { view, focus, book, search, activeId, charTab } = this.state;
+    const tabs = ['Editor', 'Corkboard', 'Outline', 'Timeline', 'Board'];
+    const keyOf = { Editor: 'editor', Corkboard: 'cork', Outline: 'outline', Timeline: 'timeline', Board: 'board' };
+
+    const scenes = DOCS.filter(d => d.status);
+
+    return {
+      showChrome: !focus,
+      showInspector: !focus && view !== 'board',
+      focus, book, search,
+      isEditor: view === 'editor',
+      isCork: view === 'cork',
+      isOutline: view === 'outline',
+      isTimeline: view === 'timeline',
+      isBoard: view === 'board',
+      isChar: view === 'char',
+      scrollPad: focus ? '80px 24px' : '40px 24px',
+      titleSize: focus ? '36px' : '28px',
+      bodySize: focus ? '20px' : '17px',
+      bodyLh: focus ? '2' : '1.85',
+      enterFocus: () => this.set('focus', true),
+      exitFocus: () => this.set('focus', false),
+      openBook: () => this.set('book', true),
+      closeBook: () => this.set('book', false),
+      openSearch: () => this.set('search', true),
+      closeSearch: () => this.set('search', false),
+
+      viewTabs: tabs.map(label => {
+        const active = view === keyOf[label];
+        return {
+          label, go: () => this.set('view', keyOf[label]),
+          bg: active ? '#1A1915' : 'transparent',
+          fg: active ? '#FDFCFA' : '#7A776E',
+          bc: active ? '#1A1915' : '#DDD9D0'
+        };
+      }),
+
+      docs: DOCS.map(d => {
+        const active = d.id === activeId;
+        return {
+          ...d,
+          pad: (14 + d.depth * 14) + 'px',
+          rowBg: active ? '#FDF2EF' : 'transparent',
+          nameColor: active ? '#C9462A' : '#1A1915',
+          nameWeight: active ? '500' : '400',
+          select: () => this.setState({ activeId: d.id, view: 'editor' })
+        };
+      }),
+
+      research: RESEARCH.map(r => ({ ...r, select: () => this.set('view', 'char') })),
+
+      cards: scenes.map((d, i) => ({
+        name: d.name, wc: d.wc + ' words', status: d.status, synopsis: d.synopsis || 'No synopsis yet.',
+        color: S[d.status], date: d.date, num: String(i + 1).padStart(2, '0'),
+        rot: i % 2 ? '0.5deg' : '-0.8deg',
+        rowBg: d.id === activeId ? '#FDF2EF' : 'transparent',
+        tlBg: d.id === activeId ? '#FDF2EF' : '#FDFCFA',
+        tlBorder: d.id === activeId ? '#C9462A' : '#DDD9D0'
+      })),
+
+      boardCards: scenes.map((d, i) => ({
+        name: d.name, wc: d.wc + ' words', status: d.status, color: S[d.status],
+        synopsis: d.synopsis || 'No synopsis yet.', date: d.date,
+        num: String(i + 1).padStart(2, '0'),
+        x: (90 + i * 235) + 'px', y: (110 + (i % 2) * 90) + 'px'
+      })),
+
+      charTabs: CHAR_TABS.map(label => ({
+        label,
+        fg: label === charTab ? '#C9462A' : '#7A776E',
+        bg: label === charTab ? '#FDF2EF' : 'transparent',
+        fw: label === charTab ? '500' : '400'
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>

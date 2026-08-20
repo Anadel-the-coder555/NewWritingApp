@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/classical-c81a7218-a61b-41ad-8086-e1193758950f/styles.css">
+<script src="./image-slot.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Lora",Georgia,serif;background:#e9ede6;color:#1c211a;font-size:14px;overflow:hidden}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#c9d4c2;border-radius:3px}
+::selection{background:#cfdcc7}
+a{color:#46543d}a:hover{color:#33402c}
+:focus-visible{outline:2px solid #5f7355;outline-offset:2px}
+input,textarea,select,button{font-family:"Lora",Georgia,serif}
+.prose p{margin-bottom:0.95em;text-align:inherit;hyphens:auto}
+.prose p:first-child::first-letter{font-family:"Cormorant Garamond",serif;font-size:3.1em;line-height:0.82;float:left;padding:0.06em 0.09em 0 0;color:#46543d;font-weight:400}
+.tnum{font-variant-numeric:tabular-nums}
+</style>
+</helmet>
+
+<div style="height:100vh;display:flex;flex-direction:column;overflow:hidden;background:#e9ede6">
+
+  <sc-if value="{{ showChrome }}" hint-placeholder-val="{{ true }}">
+  <div style="min-height:52px;background:#e3e9dd;border-bottom:1px solid #c9d4c2;display:flex;align-items:center;flex-wrap:wrap;row-gap:6px;padding:6px 18.4px;gap:18.4px;flex-shrink:0;user-select:none">
+    <button onClick="{{ openShelf }}" title="All projects" style="border:none;background:transparent;padding:0;cursor:pointer;font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:400;letter-spacing:0.06em;color:#1c211a;border-bottom:1px solid transparent" style-hover="border-bottom-color:#5f7355">Folio</button>
+    <input value="The Long Winter" spellcheck="false" style="font-size:13px;font-style:italic;border:none;background:transparent;color:#55604e;outline:none;width:132px">
+
+    <div style="flex:1"></div>
+
+    <div style="display:flex;align-items:center;gap:18.4px">
+      <sc-for list="{{ viewTabs }}" as="t" hint-placeholder-count="6">
+        <button onClick="{{ t.go }}" style="height:28px;padding:0 1px;border:none;border-bottom:1px solid {{ t.rule }};background:transparent;color:{{ t.fg }};font-size:12.5px;letter-spacing:0.04em;cursor:pointer" style-hover="color:#1c211a">{{ t.label }}</button>
+      </sc-for>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <span class="tnum" style="font-size:11.5px;color:#879181">5,132 words</span>
+    <button onClick="{{ openPalette }}" style="height:28px;padding:0 10px;border:1px solid #c9d4c2;border-radius:4px;background:transparent;color:#55604e;font-size:11.5px;cursor:pointer" style-hover="border-color:#5f7355;color:#46543d;background:#dfe7d9">⌘K</button>
+    <button onClick="{{ toggleMenu }}" style="width:28px;height:28px;border:1px solid {{ menuBorder }};border-radius:4px;background:{{ menuBg }};color:{{ menuFg }};font-size:13px;line-height:1;cursor:pointer">⋯</button>
+  </div>
+  </sc-if>
+
+  <div style="flex:1;display:flex;overflow:hidden;min-height:0;position:relative">
+
+    <sc-if value="{{ sidebarRail }}" hint-placeholder-val="{{ false }}">
+    <div style="width:34px;background:#e3e9dd;border-right:1px solid #c9d4c2;flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding-top:13.8px;gap:13.8px">
+      <button onClick="{{ expandSidebar }}" title="Show manuscript" style="width:22px;height:22px;border:1px solid #c9d4c2;border-radius:4px;background:transparent;color:#55604e;font-size:12px;line-height:1;cursor:pointer" style-hover="border-color:#5f7355;color:#46543d;background:#dfe7d9">›</button>
+      <span onClick="{{ expandSidebar }}" style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;writing-mode:vertical-rl;cursor:pointer">Manuscript</span>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ showSidebar }}" hint-placeholder-val="{{ true }}">
+    <div style="width:{{ sidebarW }};background:#e3e9dd;border-right:1px solid #c9d4c2;display:flex;flex-direction:column;flex-shrink:0;overflow:hidden">
+      <div style="flex:1;overflow-y:auto;padding-bottom:9.2px">
+        <div style="padding:18.4px 18.4px 6px;display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181">Manuscript</span>
+          <button onClick="{{ collapseSidebar }}" title="Collapse" style="width:20px;height:20px;border:1px solid transparent;border-radius:4px;background:transparent;color:#879181;font-size:12px;line-height:1;cursor:pointer" style-hover="border-color:#c9d4c2;color:#1c211a">‹</button>
+        </div>
+        <sc-for list="{{ docs }}" as="d" hint-placeholder-count="6">
+          <div onClick="{{ d.select }}" style="display:flex;align-items:center;gap:9.2px;padding:6px 18.4px 6px {{ d.pad }};cursor:pointer;background:{{ d.rowBg }};border-left:2px solid {{ d.rule }}" style-hover="background:#dfe7d9">
+            <span style="flex:1;font-size:13.5px;font-family:{{ d.font }};font-style:{{ d.italic }};color:{{ d.fg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:{{ d.ls }}">{{ d.name }}</span>
+            <span class="tnum" style="font-size:11px;color:#879181">{{ d.wc }}</span>
+          </div>
+        </sc-for>
+        <div style="padding:27.6px 18.4px 6px;font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181">Research</div>
+        <sc-for list="{{ research }}" as="r" hint-placeholder-count="4">
+          <div onClick="{{ r.select }}" style="display:flex;align-items:center;gap:9.2px;padding:6px 18.4px;cursor:pointer;border-left:2px solid transparent" style-hover="background:#dfe7d9">
+            <span style="flex:1;font-size:13px;color:#1c211a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.name }}</span>
+            <span class="tnum" style="font-size:11px;color:#879181">{{ r.n }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div onClick="{{ toggleSession }}" style="border-top:1px solid #c9d4c2;padding:11px 18.4px;cursor:pointer">
+        <div style="display:flex;align-items:baseline;justify-content:space-between">
+          <span class="tnum" style="font-size:12px;color:#55604e">740 <span style="color:#879181">of 1,000 today</span></span>
+          <span style="font-size:11px;color:#879181">{{ sessionChevron }}</span>
+        </div>
+        <div style="height:2px;background:#dde5d7;border-radius:2px;margin-top:7px;overflow:hidden"><div style="height:100%;width:74%;background:#5f7355"></div></div>
+        <sc-if value="{{ sessionOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="padding-top:13.8px">
+          <div style="display:flex;gap:3px;margin-bottom:9.2px">
+            <sc-for list="{{ streakDays }}" as="s" hint-placeholder-count="14">
+              <span style="flex:1;height:12px;border:1px solid {{ s.border }};background:{{ s.fill }};border-radius:1px"></span>
+            </sc-for>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:#55604e">
+            <span>Streak <span class="tnum" style="color:#1c211a">12 days</span></span>
+            <span>Best <span class="tnum" style="color:#1c211a">31</span></span>
+          </div>
+        </div>
+        </sc-if>
+      </div>
+    </div>
+    </sc-if>
+
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;background:#e9ede6">
+
+      <sc-if value="{{ isWrite }}" hint-placeholder-val="{{ true }}">
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0">
+
+        <sc-if value="{{ showChrome }}" hint-placeholder-val="{{ true }}">
+        <div style="min-height:40px;background:#edf1e9;border-bottom:1px solid #c9d4c2;display:flex;align-items:center;flex-wrap:wrap;row-gap:6px;padding:6px 18.4px;gap:4.6px;flex-shrink:0">
+          <select style="height:26px;border:1px solid #c9d4c2;border-radius:4px;background:transparent;font-size:12px;color:#55604e;padding:0 6px;outline:none;cursor:pointer">
+            <option>Paragraph</option><option>Chapter title</option><option>Heading</option><option>Scene break</option><option>Blockquote</option>
+          </select>
+          <select style="height:26px;border:1px solid #c9d4c2;border-radius:4px;background:transparent;font-size:12px;color:#55604e;padding:0 6px;outline:none;cursor:pointer">
+            <option>Lora</option><option>Cormorant Garamond</option>
+          </select>
+          <span style="width:1px;height:18px;background:#c9d4c2;margin:0 6px"></span>
+          <button style="width:26px;height:26px;border:1px solid transparent;border-radius:4px;background:transparent;cursor:pointer;font-size:13px;font-weight:600;color:#55604e" style-hover="border-color:#c9d4c2;background:#dfe7d9;color:#1c211a">B</button>
+          <button style="width:26px;height:26px;border:1px solid transparent;border-radius:4px;background:transparent;cursor:pointer;font-size:13px;font-style:italic;color:#55604e" style-hover="border-color:#c9d4c2;background:#dfe7d9;color:#1c211a">I</button>
+          <button style="width:26px;height:26px;border:1px solid transparent;border-radius:4px;background:transparent;cursor:pointer;font-size:13px;text-decoration:underline;color:#55604e" style-hover="border-color:#c9d4c2;background:#dfe7d9;color:#1c211a">U</button>
+          <button style="width:26px;height:26px;border:1px solid transparent;border-radius:4px;background:transparent;cursor:pointer;font-size:13px;text-decoration:line-through;color:#55604e" style-hover="border-color:#c9d4c2;background:#dfe7d9;color:#1c211a">S</button>
+          <span style="width:1px;height:18px;background:#c9d4c2;margin:0 6px"></span>
+          <button style="width:26px;height:26px;border:1px solid transparent;border-radius:4px;background:transparent;cursor:pointer;font-size:13px;color:#55604e" style-hover="border-color:#c9d4c2;background:#dfe7d9;color:#1c211a">≡</button>
+          <button style="width:26px;height:26px;border:1px solid transparent;border-radius:4px;background:transparent;cursor:pointer;font-size:13px;color:#55604e" style-hover="border-color:#c9d4c2;background:#dfe7d9;color:#1c211a">№</button>
+          <span style="width:1px;height:18px;background:#c9d4c2;margin:0 6px"></span>
+          <button style="width:26px;height:26px;border:1px solid transparent;border-radius:4px;background:transparent;cursor:pointer;font-size:13px;color:#55604e" style-hover="border-color:#c9d4c2;background:#dfe7d9;color:#1c211a">⇐</button>
+          <button style="width:26px;height:26px;border:1px solid transparent;border-radius:4px;background:transparent;cursor:pointer;font-size:13px;color:#55604e" style-hover="border-color:#c9d4c2;background:#dfe7d9;color:#1c211a">↔</button>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ showBeats }}" hint-placeholder-val="{{ false }}">
+        <div style="border-bottom:1px solid #c9d4c2;background:#f7faf5;padding:9.2px 18.4px;display:flex;align-items:center;gap:9.2px;flex-shrink:0;overflow-x:auto">
+          <span style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;flex-shrink:0">Beats</span>
+          <sc-for list="{{ beats }}" as="b" hint-placeholder-count="6">
+            <button style="height:24px;padding:0 10px;border:1px solid {{ b.border }};border-radius:12px;background:transparent;color:{{ b.fg }};font-size:11.5px;cursor:pointer;flex-shrink:0;white-space:nowrap">{{ b.label }}</button>
+          </sc-for>
+        </div>
+        </sc-if>
+
+        <div style="flex:1;overflow:auto;display:flex;justify-content:center;padding:{{ scrollPad }};min-height:0">
+          <div style="display:flex;flex-wrap:wrap;gap:18.4px;justify-content:center;width:100%;max-width:{{ paperMax }}">
+            <div style="background:#f7faf5;border:1px solid #c9d4c2;border-radius:4px;flex:3 1 480px;min-width:0;height:fit-content">
+              <div style="padding:{{ paperPad }}">
+                <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:9.2px;margin-bottom:9.2px">
+                  <span style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;white-space:nowrap">Part One · Chapter One</span>
+                  <span class="tnum" style="font-size:11px;color:#879181">{{ docMeta }}</span>
+                </div>
+                <input value="Ash on the Sill" spellcheck="false" style="font-family:'Cormorant Garamond',serif;font-size:{{ titleSize }};font-weight:400;color:#1c211a;border:none;background:transparent;outline:none;width:100%;letter-spacing:-0.01em;line-height:1.12">
+                <div style="height:1px;background:#c9d4c2;margin:13.8px 0 18.4px"></div>
+                <div class="prose" contenteditable="true" spellcheck="true" style="outline:none;text-align:{{ proseAlign }};font-size:{{ bodySize }};line-height:{{ bodyLh }};color:#1c211a;caret-color:#5f7355;min-height:340px">
+                  <p style="box-shadow:{{ tw1 }}">The ferry did not come at six, and Sarah understood then that the winter had arrived in the way winters arrive here — not with snow but with cancellation, with the small municipal admissions that nothing further would be leaving tonight.</p>
+                  <p style="box-shadow:{{ tw2 }}">She waited anyway. There was ash on the sill of the terminal window, from the burn pits across the water, and she wrote her name in it with one finger and then wiped it out again.</p>
+                  <p>Tomas had said the crossing takes forty minutes in good weather, and he had never once in eleven years described the weather as <span style="border-bottom:1px solid #93a389">good</span>. That was the whole of him, she thought: a man who kept his hopes in the subjunctive.</p>
+                  <p style="text-align:center;color:#a3ad9c;letter-spacing:0.4em;margin:18.4px 0">· · ·</p>
+                  <p>By seven the ticket agent had gone home. The lights above the ramp stayed on, tuned to that particular yellow that makes everyone underneath it look like they have <span style="border-bottom:1px solid #93a389">already left</span>.</p>
+                  <p>She counted the bollards. She counted them again and got a different number, which felt, in the circumstances, entirely fair.</p>
+                </div>
+                <sc-if value="{{ notesQuiet }}" hint-placeholder-val="{{ true }}">
+                <div onClick="{{ showNotes }}" style="margin-top:27.6px;padding-top:11px;border-top:1px solid #dde5d7;display:flex;align-items:baseline;gap:9.2px;cursor:pointer">
+                  <span class="tnum" style="font-size:11px;color:#879181">3 margin notes · 1 unresolved</span>
+                  <span style="font-size:11px;color:#46543d">read them</span>
+                </div>
+                </sc-if>
+              </div>
+            </div>
+
+            <sc-if value="{{ showComments }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:1 1 210px;min-width:196px;max-width:250px">
+              <div style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;margin:0 0 13.8px 2px">Margin</div>
+              <sc-for list="{{ comments }}" as="c" hint-placeholder-count="3">
+                <div style="border-left:1px solid #c9d4c2;padding:0 0 13.8px 13.8px;margin-bottom:13.8px">
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4.6px">
+                    <span style="font-size:11px;color:#46543d">{{ c.who }}</span>
+                    <span class="tnum" style="font-size:10px;color:#879181">{{ c.when }}</span>
+                  </div>
+                  <div style="font-size:12px;line-height:1.55;color:#454c42">{{ c.text }}</div>
+                </div>
+              </sc-for>
+            </div>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isCards }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;overflow-y:auto;padding:36.8px">
+        <div style="max-width:960px;margin:0 auto">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:9.2px">
+            <span style="font-family:'Cormorant Garamond',serif;font-size:30px;font-weight:400">Cards</span>
+            <span class="tnum" style="font-size:11px;color:#879181">4 scenes · 5,132 words</span>
+          </div>
+          <div style="height:1px;background:#c9d4c2;margin-bottom:27.6px"></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:18.4px">
+            <sc-for list="{{ cards }}" as="c" hint-placeholder-count="4">
+              <div style="background:#f7faf5;border:1px solid #c9d4c2;border-radius:4px;padding:18.4px;cursor:pointer;min-height:190px;display:flex;flex-direction:column" style-hover="border-color:#5f7355">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9.2px">
+                  <span class="tnum" style="font-size:10px;letter-spacing:0.14em;color:#879181">{{ c.num }}</span>
+                  <span style="font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:{{ c.statusFg }}">{{ c.status }}</span>
+                </div>
+                <div style="font-family:'Cormorant Garamond',serif;font-size:21px;font-weight:500;color:#1c211a;line-height:1.15;margin-bottom:9.2px">{{ c.name }}</div>
+                <div style="font-size:12.5px;line-height:1.6;color:#55604e;flex:1">{{ c.synopsis }}</div>
+                <div style="height:1px;background:#dde5d7;margin:13.8px 0 9.2px"></div>
+                <div style="display:flex;justify-content:space-between"><span class="tnum" style="font-size:11px;color:#879181">{{ c.wc }}</span><span class="tnum" style="font-size:11px;color:#879181">{{ c.date }}</span></div>
+              </div>
+            </sc-for>
+            <div style="border:1px dashed #c9d4c2;border-radius:4px;min-height:190px;display:flex;align-items:center;justify-content:center;color:#879181;font-size:12px;cursor:pointer" style-hover="border-color:#5f7355;color:#46543d">New scene</div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isOutline }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;overflow-y:auto;padding:36.8px">
+        <div style="max-width:760px;margin:0 auto">
+          <div style="font-family:'Cormorant Garamond',serif;font-size:30px;font-weight:400;margin-bottom:9.2px">Contents</div>
+          <div style="height:1px;background:#c9d4c2;margin-bottom:18.4px"></div>
+          <table style="width:100%;border-collapse:collapse">
+            <thead>
+              <tr>
+                <th style="text-align:left;font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;font-weight:400;padding:0 0 9.2px">№</th>
+                <th style="text-align:left;font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;font-weight:400;padding:0 0 9.2px">Scene</th>
+                <th style="text-align:left;font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;font-weight:400;padding:0 0 9.2px">Status</th>
+                <th style="text-align:right;font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;font-weight:400;padding:0 0 9.2px">Words</th>
+                <th style="text-align:right;font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;font-weight:400;padding:0 0 9.2px">Story date</th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ cards }}" as="c" hint-placeholder-count="4">
+                <tr style="border-top:1px solid #c9d4c2;cursor:pointer;background:{{ c.rowBg }}" style-hover="background:#dfe7d9">
+                  <td class="tnum" style="padding:11px 0;font-size:11px;color:#879181;width:36px">{{ c.num }}</td>
+                  <td style="padding:11px 0;font-size:15px;color:#1c211a">{{ c.name }}</td>
+                  <td style="padding:11px 0;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:{{ c.statusFg }};width:110px">{{ c.status }}</td>
+                  <td class="tnum" style="padding:11px 0;font-size:12px;color:#55604e;text-align:right;width:80px">{{ c.wc }}</td>
+                  <td class="tnum" style="padding:11px 0;font-size:12px;color:#879181;text-align:right;width:96px">{{ c.date }}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isTimeline }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;overflow:auto;padding:36.8px">
+        <div style="font-family:'Cormorant Garamond',serif;font-size:30px;font-weight:400;margin-bottom:9.2px">Story time</div>
+        <div style="height:1px;background:#c9d4c2;margin-bottom:36.8px"></div>
+        <div style="min-width:720px;display:flex;gap:27.6px;align-items:stretch">
+          <sc-for list="{{ cards }}" as="c" hint-placeholder-count="4">
+            <div style="width:190px;flex-shrink:0;display:flex;flex-direction:column;cursor:pointer">
+              <span class="tnum" style="font-size:11px;letter-spacing:0.1em;color:#879181;margin-bottom:9.2px">{{ c.date }}</span>
+              <div style="height:1px;background:#c9d4c2;position:relative;margin-bottom:18.4px">
+                <span style="position:absolute;left:0;top:-3px;width:5px;height:5px;border-radius:50%;border:1px solid {{ c.markBorder }};background:{{ c.markFill }}"></span>
+              </div>
+              <div style="border:1px solid #c9d4c2;border-radius:4px;padding:13.8px;background:#f7faf5;flex:1" style-hover="border-color:#5f7355">
+                <div style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:500;line-height:1.2;margin-bottom:6px">{{ c.name }}</div>
+                <div style="font-size:11.5px;line-height:1.55;color:#55604e">{{ c.synopsis }}</div>
+                <div style="height:1px;background:#dde5d7;margin:9.2px 0"></div>
+                <span class="tnum" style="font-size:11px;color:#879181">{{ c.wc }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isBoard }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;position:relative;overflow:hidden;background-color:#262a24;background-image:radial-gradient(circle,#384034 1px,transparent 1px);background-size:26px 26px">
+        <div style="position:absolute;top:18.4px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:9.2px;z-index:20;background:rgba(31,33,30,0.92);border:1px solid #454c42;border-radius:4px;padding:6px 13.8px;white-space:nowrap">
+          <button style="height:24px;padding:0 10px;border:1px solid #5f7355;border-radius:4px;background:transparent;color:#93a389;font-size:11px;letter-spacing:0.06em;cursor:pointer">Thread</button>
+          <button style="height:24px;padding:0 10px;border:1px solid #454c42;border-radius:4px;background:transparent;color:#879181;font-size:11px;letter-spacing:0.06em;cursor:pointer" style-hover="border-color:#5f7355;color:#93a389">Reset view</button>
+          <span style="width:1px;height:14px;background:#454c42"></span>
+          <span style="font-size:11px;color:#7a7d78;font-style:italic">Drag cards · pan canvas</span>
+        </div>
+        <sc-for list="{{ boardCards }}" as="b" hint-placeholder-count="4">
+          <div style="position:absolute;left:{{ b.x }};top:{{ b.y }};width:212px;background:#f7faf5;border:1px solid #55604e;border-radius:4px;overflow:hidden;cursor:grab;z-index:5;box-shadow:0 12px 32px rgba(0,0,0,0.4)">
+            <div style="padding:11px 13.8px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+                <span class="tnum" style="font-size:10px;letter-spacing:0.14em;color:#879181">{{ b.num }}</span>
+                <span style="font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:{{ b.statusFg }}">{{ b.status }}</span>
+              </div>
+              <div style="font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:500;line-height:1.15;color:#1c211a;margin-bottom:6px">{{ b.name }}</div>
+              <div style="font-size:11.5px;line-height:1.55;color:#55604e">{{ b.synopsis }}</div>
+            </div>
+            <div style="border-top:1px solid #dde5d7;padding:8px 13.8px;display:flex;justify-content:space-between">
+              <span class="tnum" style="font-size:10.5px;color:#879181">{{ b.wc }}</span>
+              <span class="tnum" style="font-size:10.5px;color:#879181">{{ b.date }}</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isBible }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;overflow-y:auto;padding:36.8px">
+        <div style="max-width:900px;margin:0 auto">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:13.8px;margin-bottom:9.2px">
+            <span style="font-family:'Cormorant Garamond',serif;font-size:30px;font-weight:400">World bible</span>
+            <input placeholder="Filter entities…" style="height:30px;width:220px;border:1px solid #c9d4c2;border-radius:4px;background:#f7faf5;padding:0 10px;font-size:12.5px;color:#1c211a;outline:none">
+          </div>
+          <div style="height:1px;background:#c9d4c2;margin-bottom:27.6px"></div>
+          <sc-for list="{{ bibleGroups }}" as="g" hint-placeholder-count="3">
+            <div style="margin-bottom:36.8px">
+              <div style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;margin-bottom:13.8px">{{ g.label }}</div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(252px,1fr));gap:18.4px">
+                <sc-for list="{{ g.items }}" as="e" hint-placeholder-count="3">
+                  <div style="border:1px solid #c9d4c2;border-radius:4px;background:#f7faf5;padding:18.4px;cursor:pointer" style-hover="border-color:#5f7355">
+                    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">
+                      <span style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:500">{{ e.name }}</span>
+                      <span class="tnum" style="font-size:11px;color:#879181">{{ e.mentions }}</span>
+                    </div>
+                    <div style="font-size:12px;color:#55604e;line-height:1.55">{{ e.note }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+    </div>
+
+    <sc-if value="{{ showInspector }}" hint-placeholder-val="{{ false }}">
+    <div style="width:288px;background:#e3e9dd;border-left:1px solid #c9d4c2;display:flex;flex-direction:column;flex-shrink:0;overflow:hidden">
+      <div style="display:flex;border-bottom:1px solid #c9d4c2;flex-shrink:0">
+        <sc-for list="{{ panelTabs }}" as="p" hint-placeholder-count="3">
+          <button onClick="{{ p.go }}" style="flex:1;height:36px;border:none;border-right:1px solid #c9d4c2;border-bottom:1px solid {{ p.rule }};background:transparent;color:{{ p.fg }};font-size:10.5px;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer">{{ p.label }}</button>
+        </sc-for>
+        <button onClick="{{ closeInspector }}" title="Collapse" style="width:30px;height:36px;border:none;background:transparent;color:#879181;font-size:13px;cursor:pointer" style-hover="color:#1c211a">›</button>
+      </div>
+
+      <div style="flex:1;overflow-y:auto">
+        <sc-if value="{{ panelInspector }}" hint-placeholder-val="{{ true }}">
+        <div>
+          <div style="padding:18.4px;border-bottom:1px solid #dde5d7">
+            <div style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;margin-bottom:9.2px">Synopsis</div>
+            <textarea rows="4" style="width:100%;border:1px solid #c9d4c2;border-radius:4px;background:#e9ede6;font-size:12.5px;color:#1c211a;padding:9.2px;resize:none;outline:none;line-height:1.55;min-height:78px">Sarah misses the last ferry and decides not to go home.</textarea>
+          </div>
+          <div style="padding:18.4px;border-bottom:1px solid #dde5d7">
+            <div style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;margin-bottom:9.2px">Status</div>
+            <div style="display:flex;border:1px solid #c9d4c2;border-radius:4px;overflow:hidden">
+              <span style="flex:1;text-align:center;padding:6px 0;font-size:11.5px;color:#55604e;border-right:1px solid #c9d4c2;cursor:pointer">Draft</span>
+              <span style="flex:1;text-align:center;padding:6px 0;font-size:11.5px;color:#46543d;background:#dfe7d9;border-right:1px solid #c9d4c2;cursor:pointer">Revision</span>
+              <span style="flex:1;text-align:center;padding:6px 0;font-size:11.5px;color:#55604e;cursor:pointer">Final</span>
+            </div>
+          </div>
+          <div style="padding:18.4px;border-bottom:1px solid #dde5d7">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9.2px">
+              <span style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181">Word target</span>
+              <span class="tnum" style="font-size:11px;color:#46543d">74%</span>
+            </div>
+            <input value="2,500" class="tnum" style="width:100%;border:1px solid #c9d4c2;border-radius:4px;background:#e9ede6;font-size:12.5px;color:#1c211a;padding:6px 9.2px;outline:none;text-align:right">
+            <div style="height:2px;background:#dde5d7;border-radius:2px;margin-top:9.2px;overflow:hidden"><div style="height:100%;width:74%;background:#5f7355"></div></div>
+          </div>
+          <div style="padding:18.4px;border-bottom:1px solid #dde5d7">
+            <div style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;margin-bottom:9.2px">Tags</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4.6px">
+              <span style="font-size:11px;color:#46543d;border:1px solid #c9d4c2;border-radius:12px;padding:2px 9px">winter</span>
+              <span style="font-size:11px;color:#55604e;border:1px solid #c9d4c2;border-radius:12px;padding:2px 9px">pov: sarah</span>
+              <input placeholder="add…" style="border:none;background:transparent;font-size:11px;color:#1c211a;outline:none;width:56px">
+            </div>
+          </div>
+          <div style="padding:18.4px">
+            <div style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;margin-bottom:9.2px">Statistics</div>
+            <sc-for list="{{ stats }}" as="s" hint-placeholder-count="5">
+              <div style="display:flex;justify-content:space-between;padding:4.6px 0;border-bottom:1px solid #dde5d7">
+                <span style="font-size:12px;color:#55604e">{{ s.k }}</span>
+                <span class="tnum" style="font-size:12px;color:#1c211a">{{ s.v }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ panelHistory }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:18.4px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:13.8px">
+            <span style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181">Snapshots</span>
+            <button style="height:24px;padding:0 9px;border:1px solid #c9d4c2;border-radius:4px;background:transparent;color:#46543d;font-size:11px;cursor:pointer" style-hover="border-color:#5f7355;background:#dfe7d9">Take one</button>
+          </div>
+          <sc-for list="{{ snapshots }}" as="s" hint-placeholder-count="4">
+            <div style="border-left:1px solid {{ s.rule }};padding:0 0 18.4px 13.8px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <span style="font-size:12.5px;color:#1c211a">{{ s.label }}</span>
+                <span class="tnum" style="font-size:11px;color:#879181">{{ s.delta }}</span>
+              </div>
+              <div class="tnum" style="font-size:11px;color:#879181;margin:2px 0 6px">{{ s.when }} · {{ s.words }} words</div>
+              <div style="display:flex;gap:4.6px">
+                <button style="height:22px;padding:0 8px;border:1px solid #c9d4c2;border-radius:4px;background:transparent;color:#55604e;font-size:10.5px;cursor:pointer" style-hover="border-color:#5f7355;color:#46543d">Compare</button>
+                <button style="height:22px;padding:0 8px;border:1px solid #c9d4c2;border-radius:4px;background:transparent;color:#55604e;font-size:10.5px;cursor:pointer" style-hover="border-color:#5f7355;color:#46543d">Restore</button>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ panelNotes }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:18.4px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:13.8px">
+            <span style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181">Open notes</span>
+            <button onClick="{{ toggleMargin }}" style="height:24px;padding:0 9px;border:1px solid {{ marginBorder }};border-radius:4px;background:transparent;color:{{ marginFg }};font-size:11px;cursor:pointer" style-hover="background:#dfe7d9">{{ marginCheck }}</button>
+          </div>
+          <sc-for list="{{ comments }}" as="c" hint-placeholder-count="3">
+            <div style="border-left:1px solid #c9d4c2;padding:0 0 13.8px 13.8px;margin-bottom:13.8px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4.6px">
+                <span style="font-size:11px;color:#46543d">{{ c.who }}</span>
+                <span class="tnum" style="font-size:10px;color:#879181">{{ c.when }}</span>
+              </div>
+              <div style="font-size:12.5px;line-height:1.55;color:#454c42;margin-bottom:6px">{{ c.text }}</div>
+              <div style="font-size:11px;color:#879181;font-style:italic">on “{{ c.anchor }}”</div>
+            </div>
+          </sc-for>
+        </div>
+        </sc-if>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ inspectorRail }}" hint-placeholder-val="{{ false }}">
+    <div style="width:34px;background:#e3e9dd;border-left:1px solid #c9d4c2;flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding-top:13.8px;gap:13.8px">
+      <button onClick="{{ openInspector }}" title="Show scene panel" style="width:22px;height:22px;border:1px solid #c9d4c2;border-radius:4px;background:transparent;color:#55604e;font-size:12px;line-height:1;cursor:pointer" style-hover="border-color:#5f7355;color:#46543d;background:#dfe7d9">‹</button>
+      <span onClick="{{ openInspector }}" style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;writing-mode:vertical-rl;cursor:pointer">Synopsis</span>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ menu }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeMenu }}" style="position:absolute;inset:0;z-index:60">
+      <div style="position:absolute;top:9.2px;right:13.8px;width:268px;background:#f7faf5;border:1px solid #c9d4c2;border-radius:4px;box-shadow:0 3px 10px rgba(45,45,43,0.14);overflow:hidden">
+        <sc-for list="{{ menuGroups }}" as="g" hint-placeholder-count="4">
+          <div style="border-bottom:1px solid #dde5d7;padding:9.2px 0">
+            <div style="font-size:9.5px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;padding:0 13.8px 4.6px">{{ g.label }}</div>
+            <sc-for list="{{ g.items }}" as="i" hint-placeholder-count="3">
+              <div onClick="{{ i.run }}" style="display:flex;align-items:center;gap:9.2px;padding:6px 13.8px;cursor:pointer" style-hover="background:#dfe7d9">
+                <span style="width:12px;font-size:11px;color:#46543d;flex-shrink:0">{{ i.check }}</span>
+                <span style="flex:1;font-size:12.5px;color:#1c211a">{{ i.label }}</span>
+                <span class="tnum" style="font-size:10.5px;color:#879181">{{ i.key }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+
+  <sc-if value="{{ focus }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ exitFocus }}" style="position:fixed;bottom:27.6px;left:50%;transform:translateX(-50%);border:1px solid #c9d4c2;background:#f7faf5;color:#55604e;padding:7px 16px;border-radius:4px;font-size:12px;cursor:pointer;z-index:100">Esc — leave focus</div>
+  </sc-if>
+
+  <sc-if value="{{ shelf }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;background:#e9ede6;z-index:450;display:flex;flex-direction:column;overflow:hidden">
+    <div style="display:flex;align-items:baseline;gap:18.4px;padding:27.6px 36.8px 18.4px;border-bottom:1px solid #c9d4c2;background:#e3e9dd">
+      <span style="font-family:'Cormorant Garamond',serif;font-size:26px;letter-spacing:0.06em">Folio</span>
+      <span style="font-family:'Cormorant Garamond',serif;font-size:26px;color:#879181">/ Projects</span>
+      <span style="flex:1"></span>
+      <span class="tnum" style="font-size:11.5px;color:#879181">5 projects · 118,904 words</span>
+      <button style="height:30px;padding:0 13.8px;border:1px solid #5f7355;border-radius:4px;background:transparent;color:#46543d;font-size:12px;cursor:pointer" style-hover="background:#dfe7d9">New project</button>
+      <button onClick="{{ closeShelf }}" style="width:30px;height:30px;border:1px solid #c9d4c2;border-radius:4px;background:transparent;color:#55604e;font-size:13px;cursor:pointer" style-hover="border-color:#5f7355;background:#dfe7d9">×</button>
+    </div>
+
+    <div style="flex:1;overflow-y:auto;padding:36.8px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:36.8px 27.6px;max-width:1180px;margin:0 auto">
+        <sc-for list="{{ projects }}" as="p" hint-placeholder-count="5">
+          <div onClick="{{ p.open }}" style="cursor:pointer">
+            <div style="position:relative;width:100%;aspect-ratio:2 / 3;background:#f7faf5;border:1px solid {{ p.coverLine }};border-left:3px solid {{ p.spine }};border-radius:2px 5px 5px 2px;box-shadow:0 3px 10px rgba(45,50,43,0.16);overflow:hidden">
+              <image-slot id="{{ p.slot }}" shape="rect" fit="cover" placeholder="{{ p.hint }}"></image-slot>
+            </div>
+            <div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:11px;gap:9.2px">
+              <span style="font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:500;line-height:1.15;color:#1c211a">{{ p.title }}</span>
+              <span style="font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:{{ p.statusFg }};white-space:nowrap">{{ p.status }}</span>
+            </div>
+            <div class="tnum" style="font-size:11px;color:#879181;margin-top:3px">{{ p.words }} words · {{ p.when }}</div>
+          </div>
+        </sc-for>
+
+        <div style="cursor:pointer">
+          <div style="width:100%;aspect-ratio:2 / 3;border:1px dashed #c9d4c2;border-radius:2px 5px 5px 2px;display:flex;align-items:center;justify-content:center;color:#879181;font-size:12px" style-hover="border-color:#5f7355;color:#46543d">New project</div>
+          <div style="font-size:11px;color:#879181;margin-top:11px;font-style:italic">Drag an image onto any cover to set it</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ cmd }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ closePalette }}" style="position:fixed;inset:0;background:rgba(31,33,30,0.32);z-index:400;display:flex;align-items:flex-start;justify-content:center;padding-top:96px">
+    <div style="width:560px;background:#f7faf5;border:1px solid #c9d4c2;border-radius:4px;box-shadow:0 12px 32px rgba(31,33,30,0.24);overflow:hidden">
+      <div style="display:flex;align-items:center;gap:9.2px;padding:13.8px 18.4px;border-bottom:1px solid #c9d4c2">
+        <span style="font-family:'Cormorant Garamond',serif;font-size:17px;color:#5f7355">›</span>
+        <input placeholder="Type a command or a scene name…" style="flex:1;border:none;background:transparent;font-size:15px;color:#1c211a;outline:none">
+        <span class="tnum" style="font-size:11px;color:#879181">⌘K</span>
+      </div>
+      <sc-for list="{{ cmdItems }}" as="c" hint-placeholder-count="8">
+        <div onClick="{{ c.run }}" style="display:flex;align-items:center;gap:11px;padding:9.2px 18.4px;border-bottom:1px solid #dde5d7;cursor:pointer" style-hover="background:#dfe7d9">
+          <span style="font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:#879181;width:64px;flex-shrink:0">{{ c.group }}</span>
+          <span style="flex:1;font-size:13.5px;color:#1c211a">{{ c.label }}</span>
+          <span class="tnum" style="font-size:11px;color:#879181">{{ c.key }}</span>
+        </div>
+      </sc-for>
+      <div style="padding:9.2px 18.4px;font-size:11px;color:#879181;font-style:italic">↑↓ to move · ↵ to run · esc to dismiss</div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ compile }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ closeCompile }}" style="position:fixed;inset:0;background:rgba(31,33,30,0.32);z-index:400;display:flex;align-items:center;justify-content:center">
+    <div style="width:520px;background:#f7faf5;border:1px solid #c9d4c2;border-radius:4px;box-shadow:0 12px 32px rgba(31,33,30,0.24);overflow:hidden">
+      <div style="padding:18.4px;border-bottom:1px solid #c9d4c2">
+        <div style="font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:400">Compile manuscript</div>
+        <div style="font-size:12px;color:#879181;font-style:italic">4 scenes · 5,132 words · 2 excluded</div>
+      </div>
+      <div style="padding:18.4px;border-bottom:1px solid #dde5d7">
+        <div style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;margin-bottom:9.2px">Format</div>
+        <div style="display:flex;border:1px solid #c9d4c2;border-radius:4px;overflow:hidden">
+          <span style="flex:1;text-align:center;padding:7px 0;font-size:12px;color:#46543d;background:#dfe7d9;border-right:1px solid #c9d4c2;cursor:pointer">Standard manuscript</span>
+          <span style="flex:1;text-align:center;padding:7px 0;font-size:12px;color:#55604e;border-right:1px solid #c9d4c2;cursor:pointer">Paperback</span>
+          <span style="flex:1;text-align:center;padding:7px 0;font-size:12px;color:#55604e;cursor:pointer">Plain text</span>
+        </div>
+      </div>
+      <div style="padding:18.4px;border-bottom:1px solid #dde5d7">
+        <div style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:#879181;margin-bottom:9.2px">Include</div>
+        <sc-for list="{{ compileOpts }}" as="o" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;gap:9.2px;padding:4.6px 0">
+            <span style="width:12px;height:12px;border:1px solid {{ o.border }};border-radius:2px;background:{{ o.fill }};flex-shrink:0"></span>
+            <span style="font-size:12.5px;color:#454c42">{{ o.label }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="padding:13.8px 18.4px;display:flex;justify-content:flex-end;gap:9.2px">
+        <button onClick="{{ closeCompile }}" style="height:32px;padding:0 16px;border:1px solid #c9d4c2;border-radius:4px;background:transparent;color:#55604e;font-size:12.5px;cursor:pointer" style-hover="background:#dfe7d9">Cancel</button>
+        <button style="height:32px;padding:0 16px;border:1px solid #5f7355;border-radius:4px;background:transparent;color:#46543d;font-size:12.5px;cursor:pointer" style-hover="background:#dfe7d9">Compile &amp; export</button>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ book }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;background:#1c211a;z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden">
+    <div style="position:absolute;top:-140px;left:50%;transform:translateX(-50%);width:820px;height:560px;background:radial-gradient(ellipse at 50% 0%,rgba(221,228,216,0.12) 0%,rgba(125,143,116,0.05) 42%,transparent 72%);pointer-events:none"></div>
+    <div style="width:980px;height:640px;display:flex;position:relative;box-shadow:0 12px 32px rgba(0,0,0,0.55);z-index:5">
+      <div style="width:490px;background:linear-gradient(to right,#dde5d7,#f7faf5);border-radius:4px 0 0 4px;padding:36.8px 44px;display:flex;flex-direction:column">
+        <div style="display:flex;justify-content:space-between;border-bottom:1px solid #c9d4c2;padding-bottom:9.2px;margin-bottom:18.4px">
+          <span style="font-size:10px;letter-spacing:0.18em;text-transform:uppercase;color:#879181;font-style:italic">Chapter One</span>
+          <span class="tnum" style="font-size:11px;color:#879181">1</span>
+        </div>
+        <div class="prose" style="flex:1;font-size:14.5px;line-height:1.62;color:#1c211a;overflow:hidden;text-align:justify">
+          <p>The ferry did not come at six, and Sarah understood then that the winter had arrived in the way winters arrive here — not with snow but with cancellation, with the small municipal admissions that nothing further would be leaving tonight.</p>
+          <p>She waited anyway. There was ash on the sill of the terminal window, from the burn pits across the water, and she wrote her name in it with one finger and then wiped it out again.</p>
+        </div>
+        <div style="border-top:1px solid #c9d4c2;padding-top:9.2px;text-align:center;font-size:11px;color:#a3ad9c;letter-spacing:0.4em">· · ·</div>
+      </div>
+      <div style="width:1px;background:linear-gradient(to bottom,#c9d4c2,#879181,#c9d4c2)"></div>
+      <div style="width:490px;background:linear-gradient(to left,#dde5d7,#f7faf5);border-radius:0 4px 4px 0;padding:36.8px 44px;display:flex;flex-direction:column">
+        <div style="display:flex;justify-content:space-between;border-bottom:1px solid #c9d4c2;padding-bottom:9.2px;margin-bottom:18.4px">
+          <span style="font-size:10px;letter-spacing:0.18em;text-transform:uppercase;color:#879181;font-style:italic">Chapter One</span>
+          <span class="tnum" style="font-size:11px;color:#879181">2</span>
+        </div>
+        <div class="prose" contenteditable="true" style="flex:1;outline:none;font-size:14.5px;line-height:1.62;color:#1c211a;caret-color:#5f7355;overflow:hidden;cursor:text;text-align:justify">
+          <p>By seven the ticket agent had gone home. The lights above the ramp stayed on, tuned to that particular yellow that makes everyone underneath it look like they have already left.</p>
+        </div>
+        <div style="border-top:1px solid #c9d4c2;padding-top:9.2px;text-align:center;font-size:11px;color:#a3ad9c;letter-spacing:0.4em">· · ·</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:13.8px;margin-top:27.6px;z-index:10">
+      <button style="height:28px;padding:0 14px;border:1px solid #55604e;border-radius:4px;background:transparent;color:#a3ad9c;font-size:11.5px;letter-spacing:0.06em;cursor:pointer" style-hover="border-color:#5f7355;color:#cfdcc7">← Prev</button>
+      <span class="tnum" style="font-size:11.5px;color:#879181;letter-spacing:0.08em">Pages 1 – 2</span>
+      <button style="height:28px;padding:0 14px;border:1px solid #55604e;border-radius:4px;background:transparent;color:#a3ad9c;font-size:11.5px;letter-spacing:0.06em;cursor:pointer" style-hover="border-color:#5f7355;color:#cfdcc7">Next →</button>
+      <span style="width:1px;height:16px;background:#454c42"></span>
+      <button onClick="{{ closeBook }}" style="height:28px;padding:0 14px;border:1px solid #55604e;border-radius:4px;background:transparent;color:#a3ad9c;font-size:11.5px;letter-spacing:0.06em;cursor:pointer" style-hover="border-color:#5f7355;color:#cfdcc7">Close</button>
+    </div>
+  </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const STATUS = {
+  draft:    { label: 'Draft',    fg: '#879181', fill: 'transparent', border: '#a3ad9c' },
+  revision: { label: 'Revision', fg: '#46543d', fill: '#5f7355',     border: '#5f7355' },
+  final:    { label: 'Final',    fg: '#1c211a', fill: '#1c211a',     border: '#1c211a' }
+};
+
+const DOCS = [
+  { id: 1, name: 'Part One: The Long Winter', wc: '5,132', depth: 0, folder: true },
+  { id: 2, name: 'Ash on the Sill', wc: '1,842', depth: 1, status: 'revision', date: '14 Feb', synopsis: 'Sarah misses the last ferry and decides not to go home.' },
+  { id: 3, name: 'The Ferry at Dusk', wc: '2,310', depth: 1, status: 'draft', date: '15 Feb', synopsis: 'The crossing, and what Tomas will not say about the burn pits.' },
+  { id: 4, name: 'What Elena Knew', wc: '980', depth: 1, status: 'final', date: '19 Feb', synopsis: 'Elena has kept the ledger eleven years. She sets it on the table.' },
+  { id: 5, name: 'Part Two: Thaw', wc: '0', depth: 0, folder: true },
+  { id: 6, name: 'Brass and Salt', wc: '0', depth: 1, status: 'draft', date: '—', synopsis: 'Untouched. The thaw arrives before anyone is ready for it.' }
+];
+
+const RESEARCH = [
+  { name: 'Sarah Ellwood', n: 41 }, { name: 'Tomas Vry', n: 27 },
+  { name: 'Harborview Terminal', n: 12 }, { name: 'Winter research', n: 6 }
+];
+
+const COMMENTS = [
+  { who: 'You', when: '2h', text: 'This clause is doing two jobs. Split it — the municipal joke lands harder alone.', anchor: 'small municipal admissions' },
+  { who: 'You', when: 'Yesterday', text: 'Is “good” carrying enough weight here, or should Tomas say it aloud once?', anchor: 'good' },
+  { who: 'M. Reyes', when: '3 days', text: 'Lovely. But we have had the yellow light in chapter three too.', anchor: 'already left' }
+];
+
+const SNAPSHOTS = [
+  { label: 'Before the ferry cut', when: 'Today 14:02', words: '1,842', delta: '+318', current: true },
+  { label: 'Morning pass', when: 'Today 09:11', words: '1,524', delta: '+96' },
+  { label: 'Trimmed the harbor page', when: 'Yesterday 21:40', words: '1,428', delta: '−241' },
+  { label: 'First full draft', when: '12 Feb 18:22', words: '1,669', delta: '+1,669' }
+];
+
+const BIBLE = [
+  { label: 'Characters', items: [
+    { name: 'Sarah Ellwood', mentions: 41, note: 'Auditor. Came for three weeks in 2019 and stayed.' },
+    { name: 'Tomas Vry', mentions: 27, note: 'Ferryman. Keeps his hopes in the subjunctive.' },
+    { name: 'Elena Márquez', mentions: 14, note: 'Kept the ledger for eleven years.' }
+  ]},
+  { label: 'Places', items: [
+    { name: 'Harborview Terminal', mentions: 12, note: 'Last ferry 18:05 in winter. Ash on every sill.' },
+    { name: 'The burn pits', mentions: 8, note: 'Across the water. Never described directly.' }
+  ]},
+  { label: 'Objects & motifs', items: [
+    { name: 'The ledger', mentions: 9, note: 'Handwriting “like weather on the page.”' },
+    { name: 'Yellow ramp light', mentions: 5, note: 'Flagged twice — check for repetition.' }
+  ]}
+];
+
+const PROJECTS = [
+  { slug: 'long-winter', title: 'The Long Winter', words: '5,132', when: 'today', status: 'Active' },
+  { slug: 'brass-salt', title: 'Brass & Salt', words: '41,208', when: '3 days ago', status: 'Revision' },
+  { slug: 'ledger', title: 'The Ledger', words: '68,940', when: 'Feb 2', status: 'Finished' },
+  { slug: 'harbor', title: 'Harbor Stories', words: '3,624', when: 'Jan 18', status: 'Idle' },
+  { slug: 'notebook', title: 'Notebook 2026', words: '0', when: 'Jan 4', status: 'Idle' }
+];
+
+class Component extends DCLogic {
+  state = {
+    view: 'write', panel: 'inspector', focus: false, book: false, cmd: false, compile: false, menu: false, shelf: false,
+    activeId: 2, typewriter: false, reading: false, beats: false, comments: false,
+    inspectorOpen: true, sessionOpen: false,
+    wide: typeof window === 'undefined' ? true : window.innerWidth >= 1180,
+    sidebarOpen: typeof window === 'undefined' ? true : window.innerWidth >= 1180
+  };
+
+  componentDidMount() {
+    this._key = e => {
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); this.setState(s => ({ cmd: !s.cmd, menu: false })); }
+      if (e.key === 'Escape') this.setState({ cmd: false, compile: false, focus: false, book: false, menu: false });
+    };
+    this._resize = () => {
+      const wide = window.innerWidth >= 1180;
+      if (wide !== this.state.wide) this.setState({ wide, sidebarOpen: wide });
+    };
+    window.addEventListener('keydown', this._key);
+    window.addEventListener('resize', this._resize);
+    this._resize();
+  }
+  componentWillUnmount() {
+    window.removeEventListener('keydown', this._key);
+    window.removeEventListener('resize', this._resize);
+  }
+
+  set(k, v) { this.setState({ [k]: v }); }
+  flip(k) { this.setState(s => ({ [k]: !s[k], menu: false, cmd: false })); }
+
+  renderVals() {
+    const st = this.state;
+    const { view, panel, focus, activeId, reading, wide } = st;
+    const views = [['write', 'Write'], ['cards', 'Cards'], ['outline', 'Outline'], ['timeline', 'Timeline'], ['board', 'Board'], ['bible', 'Bible']];
+    const scenes = DOCS.filter(d => !d.folder);
+    const inspectorOn = st.inspectorOpen && !focus && view !== 'board' && view !== 'bible';
+    const commentsOn = st.comments && !reading && !focus && wide;
+
+    const openPanel = tab => () => this.setState({ inspectorOpen: true, panel: tab, menu: false, cmd: false });
+
+    const card = (d, i) => {
+      const s = STATUS[d.status];
+      return {
+        name: d.name, wc: d.wc, date: d.date, synopsis: d.synopsis,
+        num: String(i + 1).padStart(2, '0'),
+        status: s.label, statusFg: s.fg, markFill: s.fill, markBorder: s.border,
+        rowBg: d.id === activeId ? '#dfe7d9' : 'transparent'
+      };
+    };
+
+    return {
+      showChrome: !focus,
+      showSidebar: !focus && st.sidebarOpen,
+      sidebarRail: !focus && !st.sidebarOpen,
+      collapseSidebar: () => this.set('sidebarOpen', false),
+      expandSidebar: () => this.set('sidebarOpen', true),
+      showInspector: inspectorOn,
+      inspectorRail: !focus && !st.inspectorOpen && view !== 'board' && view !== 'bible',
+      openInspector: () => this.set('inspectorOpen', true),
+      showComments: commentsOn,
+      notesQuiet: !commentsOn && !focus,
+      showBeats: st.beats && !focus && !reading,
+      focus, book: st.book, cmd: st.cmd, compile: st.compile, menu: st.menu,
+      isWrite: view === 'write', isCards: view === 'cards', isOutline: view === 'outline',
+      isTimeline: view === 'timeline', isBoard: view === 'board', isBible: view === 'bible',
+
+      sidebarW: wide ? '258px' : '214px',
+      scrollPad: focus ? '72px 24px 120px' : '27.6px 27.6px 72px',
+      paperMax: reading ? '760px' : '1080px',
+      paperPad: focus || reading ? '44px 56px' : '36.8px 44px',
+      titleSize: focus || reading ? '44px' : (wide ? '38px' : '29px'),
+      bodySize: focus ? '19px' : (reading ? '18px' : '16.5px'),
+      bodyLh: focus ? '1.95' : (reading ? '1.85' : '1.75'),
+      proseAlign: wide || focus ? 'justify' : 'left',
+      docMeta: reading ? 'proofing pass' : '1,842 words · 8 min',
+      tw1: 'none',
+      tw2: st.typewriter && !reading ? 'inset 2px 0 0 #b3c2a9' : 'none',
+      sessionOpen: st.sessionOpen,
+      sessionChevron: st.sessionOpen ? '−' : '+',
+      toggleSession: () => this.flip('sessionOpen'),
+
+      enterFocus: () => this.setState({ focus: true, menu: false, cmd: false }),
+      exitFocus: () => this.set('focus', false),
+      openBook: () => this.setState({ book: true, menu: false, cmd: false }),
+      closeBook: () => this.set('book', false),
+      shelf: st.shelf,
+      openShelf: () => this.setState({ shelf: true, menu: false, cmd: false }),
+      closeShelf: () => this.set('shelf', false),
+      projects: PROJECTS.map(p => ({
+        ...p,
+        slot: 'cover-' + p.slug,
+        hint: 'Cover — ' + p.title,
+        statusFg: p.status === 'Active' ? '#46543d' : '#879181',
+        spine: p.status === 'Active' ? '#5f7355' : '#c9d4c2',
+        coverLine: p.status === 'Active' ? '#5f7355' : '#c9d4c2',
+        open: () => this.setState({ shelf: false })
+      })),
+      openPalette: () => this.setState({ cmd: true, menu: false }),
+      closePalette: () => this.set('cmd', false),
+      closeCompile: () => this.set('compile', false),
+      toggleMenu: () => this.setState(s => ({ menu: !s.menu, cmd: false })),
+      closeMenu: () => this.set('menu', false),
+      closeInspector: () => this.set('inspectorOpen', false),
+      showNotes: openPanel('notes'),
+      menuBg: st.menu ? '#dfe7d9' : 'transparent',
+      menuFg: st.menu ? '#46543d' : '#55604e',
+      menuBorder: st.menu ? '#5f7355' : '#c9d4c2',
+
+      viewTabs: views.map(([k, label]) => ({
+        label, go: () => this.set('view', k),
+        rule: view === k ? '#5f7355' : 'transparent',
+        fg: view === k ? '#1c211a' : '#879181'
+      })),
+
+      beats: ['Setup', 'Inciting incident', 'First turn', 'Midpoint', 'Dark night', 'Climax'].map((label, i) => ({
+        label, fg: i === 1 ? '#46543d' : '#55604e', border: i === 1 ? '#5f7355' : '#c9d4c2'
+      })),
+
+      docs: DOCS.map(d => {
+        const active = d.id === activeId;
+        return {
+          name: d.name, wc: d.wc,
+          pad: (18.4 + d.depth * 13.8) + 'px',
+          rowBg: active ? '#dfe7d9' : 'transparent',
+          rule: active ? '#5f7355' : 'transparent',
+          fg: d.folder ? '#55604e' : '#1c211a',
+          font: d.folder ? "'Cormorant Garamond',serif" : "'Lora',serif",
+          italic: d.folder ? 'italic' : 'normal',
+          ls: d.folder ? '0.04em' : '0',
+          select: () => this.setState({ activeId: d.id, view: 'write' })
+        };
+      }),
+      research: RESEARCH.map(r => ({ ...r, select: () => this.set('view', 'bible') })),
+
+      streakDays: Array.from({ length: 14 }, (_, i) => ({
+        fill: i > 1 ? (i > 11 ? '#cfdcc7' : '#5f7355') : 'transparent',
+        border: i > 1 ? '#5f7355' : '#c9d4c2'
+      })),
+
+      cards: scenes.map(card),
+      boardCards: scenes.map((d, i) => ({ ...card(d, i), x: (72 + i * 246) + 'px', y: (104 + (i % 2) * 96) + 'px' })),
+
+      panelTabs: [['inspector', 'Scene'], ['history', 'History'], ['notes', 'Notes']].map(([k, label]) => ({
+        label, go: () => this.set('panel', k),
+        fg: panel === k ? '#1c211a' : '#879181',
+        rule: panel === k ? '#5f7355' : 'transparent'
+      })),
+      marginCheck: st.comments ? 'In margin ✓' : 'Show in margin',
+      marginBorder: st.comments ? '#5f7355' : '#c9d4c2',
+      marginFg: st.comments ? '#46543d' : '#55604e',
+      toggleMargin: () => this.flip('comments'),
+      panelInspector: panel === 'inspector',
+      panelHistory: panel === 'history',
+      panelNotes: panel === 'notes',
+
+      stats: [
+        { k: 'Words', v: '1,842' }, { k: 'Characters', v: '10,431' },
+        { k: 'Paragraphs', v: '28' }, { k: 'Sentences', v: '96' }, { k: 'Read time', v: '8 min' }
+      ],
+      comments: COMMENTS,
+      snapshots: SNAPSHOTS.map(s => ({ ...s, rule: s.current ? '#5f7355' : '#c9d4c2' })),
+      bibleGroups: BIBLE,
+
+      menuGroups: [
+        { label: 'Writing', items: [
+          { label: 'Typewriter scroll', key: '⌃T', check: st.typewriter ? '✓' : '', run: () => this.flip('typewriter') },
+          { label: 'Proofing pass', key: '⌘R', check: reading ? '✓' : '', run: () => this.flip('reading') },
+          { label: 'Beat sheet', key: '', check: st.beats ? '✓' : '', run: () => this.flip('beats') }
+        ]},
+        { label: 'Project', items: [
+          { label: 'Compile & export…', key: '⇧⌘E', check: '', run: () => this.setState({ compile: true, menu: false }) },
+          { label: 'Book mode', key: '', check: '', run: () => this.setState({ book: true, menu: false }) },
+          { label: 'Focus mode', key: 'F11', check: '', run: () => this.setState({ focus: true, menu: false }) }
+        ]}
+      ],
+
+      cmdItems: [
+        { group: 'Writing', label: 'Toggle typewriter scroll', key: '⌃T', run: () => this.flip('typewriter') },
+        { group: 'Writing', label: 'Start proofing pass', key: '⌘R', run: () => this.flip('reading') },
+        { group: 'Writing', label: 'Focus mode', key: 'F11', run: () => this.setState({ focus: true, cmd: false }) },
+        { group: 'Revision', label: 'Take a snapshot of this scene', key: '⌘S', run: openPanel('history') },
+        { group: 'Revision', label: 'Open margin notes', key: '⌘3', run: openPanel('notes') },
+        { group: 'Structure', label: 'Apply beat template: Three-act', key: '', run: () => this.flip('beats') },
+        { group: 'Export', label: 'Compile manuscript…', key: '⇧⌘E', run: () => this.setState({ compile: true, cmd: false }) },
+        { group: 'Go to', label: 'What Elena Knew', key: '', run: () => this.setState({ activeId: 4, view: 'write', cmd: false }) }
+      ],
+
+      compileOpts: [
+        { label: 'Scene titles as chapter headings', on: true },
+        { label: 'Scene-break ornaments', on: true },
+        { label: 'Margin notes and annotations', on: false },
+        { label: 'Documents marked Draft', on: false }
+      ].map(o => ({ label: o.label, fill: o.on ? '#5f7355' : 'transparent', border: o.on ? '#5f7355' : '#a3ad9c' }))
+    };
+  }
+}
+</script>
+</body>
+</html>

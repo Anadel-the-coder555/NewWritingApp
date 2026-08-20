@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Lora",Georgia,serif;background:#e9e7e6;color:#201f1d;font-size:14px}
+a{color:#7d5411}a:hover{color:#5a3b0a}
+.jp p{text-align:justify;hyphens:auto;margin-bottom:0.7em}
+.tnum{font-variant-numeric:tabular-nums}
+</style>
+</helmet>
+
+<section style="padding:44px;display:flex;flex-direction:column;gap:27.6px">
+  <div>
+    <div style="font-family:'Cormorant Garamond',serif;font-size:34px;font-weight:400">Three accent directions</div>
+    <div style="font-size:13px;color:#605d5d;font-style:italic;max-width:620px;margin-top:4px">Same aged-paper ground, same Cormorant/Lora setting, same hairline structure. Only the accent role changes. Tell me <a href="#1a">1a</a>, <a href="#1b">1b</a>, or <a href="#1c">1c</a> and I'll apply it across every view.</div>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:27.6px;align-items:flex-start">
+
+    <sc-for list="{{ options }}" as="o" hint-placeholder-count="3">
+      <div id="{{ o.id }}" style="width:420px;background:{{ o.ground }};border:1px solid {{ o.line }};border-radius:4px;overflow:hidden;box-shadow:0 3px 10px rgba(45,43,43,0.12)">
+
+        <div style="display:flex;align-items:baseline;justify-content:space-between;padding:13.8px 18.4px;border-bottom:1px solid {{ o.line }};background:{{ o.paper }}">
+          <div style="display:flex;align-items:baseline;gap:9.2px">
+            <span style="font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:{{ o.deep }};border:1px solid {{ o.accent }};border-radius:2px;padding:2px 6px">{{ o.id }}</span>
+            <span style="font-family:'Cormorant Garamond',serif;font-size:22px;letter-spacing:0.04em">{{ o.name }}</span>
+          </div>
+          <span style="font-size:11px;color:{{ o.faint }};font-style:italic">{{ o.mood }}</span>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:11px;padding:11px 18.4px;border-bottom:1px solid {{ o.line }};background:{{ o.paper }}">
+          <span style="font-family:'Cormorant Garamond',serif;font-size:21px;letter-spacing:0.06em">Folio</span>
+          <span style="width:1px;height:16px;background:{{ o.line }}"></span>
+          <span style="font-size:11.5px;font-style:italic;color:{{ o.muted }}">The Long Winter</span>
+          <span style="flex:1"></span>
+          <div style="width:56px;height:3px;background:{{ o.rail }};border-radius:2px;overflow:hidden"><div style="height:100%;width:74%;background:{{ o.accent }}"></div></div>
+          <span class="tnum" style="font-size:11px;color:{{ o.deep }}">740</span>
+        </div>
+
+        <div style="display:flex">
+          <div style="width:150px;border-right:1px solid {{ o.line }};background:{{ o.paper }};padding:11px 0">
+            <div style="font-size:9.5px;letter-spacing:0.16em;text-transform:uppercase;color:{{ o.faint }};padding:0 13.8px 6px">Manuscript</div>
+            <div style="display:flex;align-items:center;gap:7px;padding:5px 13.8px;background:{{ o.tint }};border-left:2px solid {{ o.accent }}">
+              <span style="width:5px;height:5px;border-radius:50%;background:{{ o.accent }}"></span>
+              <span style="flex:1;font-size:12px;color:{{ o.ink }}">Ash on the Sill</span>
+              <span class="tnum" style="font-size:10px;color:{{ o.faint }}">1,842</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;padding:5px 13.8px;border-left:2px solid transparent">
+              <span style="width:5px;height:5px;border-radius:50%;border:1px solid {{ o.faint }}"></span>
+              <span style="flex:1;font-size:12px;color:{{ o.ink }}">The Ferry at Dusk</span>
+              <span class="tnum" style="font-size:10px;color:{{ o.faint }}">2,310</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;padding:5px 13.8px;border-left:2px solid transparent">
+              <span style="width:5px;height:5px;border-radius:50%;background:{{ o.ink }}"></span>
+              <span style="flex:1;font-size:12px;color:{{ o.ink }}">What Elena Knew</span>
+              <span class="tnum" style="font-size:10px;color:{{ o.faint }}">980</span>
+            </div>
+          </div>
+
+          <div style="flex:1;padding:18.4px;background:{{ o.ground }}">
+            <div style="font-size:9.5px;letter-spacing:0.16em;text-transform:uppercase;color:{{ o.faint }}">Chapter One</div>
+            <div style="font-family:'Cormorant Garamond',serif;font-size:27px;font-weight:400;line-height:1.12;margin:4px 0 9.2px">Ash on the Sill</div>
+            <div style="height:1px;background:{{ o.accent }};opacity:0.55;margin-bottom:11px"></div>
+            <div class="jp" style="font-size:12.5px;line-height:1.68;color:{{ o.ink }}">
+              <p>The ferry did not come at six, and Sarah understood then that the winter had arrived not with snow but with <span style="border-bottom:1px solid {{ o.accent }};background:{{ o.tint }}">cancellation</span>.</p>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:9.2px;padding:11px 18.4px;border-top:1px solid {{ o.line }};background:{{ o.paper }};flex-wrap:wrap">
+          <span style="font-size:10.5px;letter-spacing:0.06em;color:{{ o.deep }};border:1px solid {{ o.chipLine }};background:{{ o.tint }};border-radius:12px;padding:2px 9px">winter</span>
+          <span style="font-size:10.5px;letter-spacing:0.06em;color:{{ o.muted }};border:1px solid {{ o.line }};border-radius:12px;padding:2px 9px">pov: sarah</span>
+          <span style="flex:1"></span>
+          <button style="height:26px;padding:0 11px;border:1px solid {{ o.accent }};border-radius:4px;background:transparent;color:{{ o.deep }};font-size:11.5px;cursor:pointer;font-family:'Lora',serif">Compile</button>
+          <button style="height:26px;padding:0 11px;border:1px solid {{ o.line }};border-radius:4px;background:transparent;color:{{ o.muted }};font-size:11.5px;cursor:pointer;font-family:'Lora',serif">Snapshot</button>
+        </div>
+
+        <div style="display:flex;border-top:1px solid {{ o.line }}">
+          <sc-for list="{{ o.swatches }}" as="s" hint-placeholder-count="6">
+            <div style="flex:1;height:44px;background:{{ s.hex }};display:flex;align-items:flex-end;justify-content:center;padding-bottom:3px">
+              <span class="tnum" style="font-size:8.5px;letter-spacing:0.04em;color:{{ s.fg }}">{{ s.hex }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="padding:11px 18.4px;border-top:1px solid {{ o.line }};background:{{ o.paper }};font-size:11.5px;line-height:1.55;color:{{ o.muted }}">{{ o.note }}</div>
+      </div>
+    </sc-for>
+
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const NEUTRALS = { ground: '#f3f2f2', paper: '#f8f4f4', ink: '#201f1d', muted: '#605d5d', faint: '#9b9797', line: '#d7d3d3', rail: '#eae7e7' };
+
+const OPTIONS = [
+  {
+    id: '1a', name: 'Brass', mood: 'lamplight',
+    accent: '#b68235', deep: '#7d5411', tint: '#fff3e4', chipLine: '#ffe3bf',
+    note: 'The design system as authored — warm gold as stroke and rule. Reads like a well-kept library: quiet, expensive, never loud. Safest across all eight views.',
+    swatches: [['#f3f2f2', '#605d5d'], ['#f8f4f4', '#605d5d'], ['#fff3e4', '#7d5411'], ['#b68235', '#fff3e4'], ['#7d5411', '#fff3e4'], ['#201f1d', '#bab6b6']]
+  },
+  {
+    id: '1b', name: 'Oxblood', mood: 'ink & wine',
+    accent: '#8f3423', deep: '#6d2418', tint: '#faeeea', chipLine: '#f0d5cd',
+    note: 'Closest to the red you have now, but deepened out of tomato into bound-leather oxblood. Most editorial urgency; annotations and revision marks read as marks, not decoration.',
+    swatches: [['#f3f2f2', '#605d5d'], ['#f8f4f4', '#605d5d'], ['#faeeea', '#6d2418'], ['#8f3423', '#faeeea'], ['#6d2418', '#faeeea'], ['#201f1d', '#bab6b6']]
+  },
+  {
+    id: '1c', name: 'Ink', mood: 'letterpress',
+    accent: '#201f1d', deep: '#201f1d', tint: '#eae7e7', chipLine: '#d7d3d3',
+    note: 'No colour accent at all — emphasis carried by ink weight, hairlines and space, with brass held back for ornaments only. The most severe and the most timeless; the least helpful for status at a glance.',
+    swatches: [['#f3f2f2', '#605d5d'], ['#f8f4f4', '#605d5d'], ['#eae7e7', '#444141'], ['#605d5d', '#f8f4f4'], ['#201f1d', '#bab6b6'], ['#b68235', '#fff3e4']]
+  }
+];
+
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      options: OPTIONS.map(o => ({
+        ...NEUTRALS, ...o,
+        swatches: o.swatches.map(([hex, fg]) => ({ hex, fg }))
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>
