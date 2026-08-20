@@ -348,6 +348,27 @@ function loadDoc(id) {
   prepareAnnotationMarks();
   document.getElementById('editor').style.fontFamily = d.font || DEFAULT_FONT;
   document.getElementById('fmt-font').value         = d.font || DEFAULT_FONT;
+  document.getElementById('editor').style.fontSize   = d.fontSize || '17px';
+  document.getElementById('fmt-size').value          = '';
+  document.getElementById('editor').style.lineHeight = d.lineHeight || '1';
+  document.getElementById('fmt-line-spacing').value  = d.lineHeight || '1';
+  document.querySelectorAll('#editor .scene-break').forEach(sceneBreak => {
+    const followingParagraph = sceneBreak.nextElementSibling;
+    if (followingParagraph?.tagName === 'P') {
+      followingParagraph.classList.add('scene-break-following');
+      if (sceneBreak.previousElementSibling) {
+        let precedingText = sceneBreak.previousElementSibling;
+        while (precedingText.lastElementChild) precedingText = precedingText.lastElementChild;
+        const precedingStyle = getComputedStyle(precedingText);
+        if (!followingParagraph.style.fontSize) followingParagraph.style.fontSize = precedingStyle.fontSize;
+        if (!followingParagraph.style.lineHeight) followingParagraph.style.lineHeight = precedingStyle.lineHeight;
+        if (!sceneBreak.style.lineHeight) sceneBreak.style.lineHeight = precedingStyle.lineHeight;
+        if (!followingParagraph.style.fontFamily) {
+          followingParagraph.style.setProperty('font-family', precedingStyle.fontFamily, 'important');
+        }
+      }
+    }
+  });
   document.getElementById('synopsis-area').value   = d.synopsis || '';
   document.getElementById('status-select').value   = d.status || 'draft';
   updateStatusControls(d.status || 'draft');
@@ -395,13 +416,33 @@ function saveCurrentDoc() {
    entity that matters here: a non-breaking space serializes back out of innerHTML as
    the literal text "&nbsp;" (not the actual space character), which would otherwise
    glue two words together — and its own letters ("nbsp") would wrongly read as a word. */
-function htmlToCountableText(html) {
+/* Strips content that's invisible on the page but would otherwise leak into raw text:
+   HTML comments, and <style>/<script> blocks (pasted rich text — Word, Google Docs,
+   etc. — routinely embeds a sizeable <style> block of CSS class definitions, which a
+   naive tag-stripping regex has no way to know isn't visible body text). */
+function stripHiddenHtml(html) {
   return (html || '')
-    .replace(/<[^>]+>/g, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ');
+}
+
+/* Converts HTML to plain text for character counting, preserving whatever whitespace
+   the writer actually typed (a tab or several spaces indenting a paragraph, an old
+   double-space-after-period habit, …) rather than collapsing it away. Only the
+   whitespace introduced by markup itself — a paragraph boundary — gets normalized,
+   to exactly one character, matching how a word processor represents a paragraph
+   break rather than however many tags happen to sit at that boundary. */
+function htmlToCountableText(html) {
+  return stripHiddenHtml(html)
+    .replace(/<\/(p|div|h1|h2|h3|blockquote|li)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&#160;/g, ' ')
     .replace(/&#xa0;/gi, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/\n{2,}/g, '\n')
+    .replace(/\n/g, ' ')
     .trim();
 }
 
@@ -420,6 +461,33 @@ function wordTokens(html) {
 
 function countWords(html) {
   return wordTokens(html).length;
+}
+
+/* Counts paragraphs as non-empty top-level blocks (p, headings, blockquotes, scene
+   breaks, …) — a blank line from an empty <p><br></p> shouldn't count as a paragraph,
+   which raw <p>-tag counting doesn't know to exclude. */
+function countParagraphs(html) {
+  const normalized = stripHiddenHtml(html)
+    .replace(/<\/(p|div|h1|h2|h3|blockquote|li)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ');
+  return normalized.split('\n').map(l => l.trim()).filter(Boolean).length;
+}
+
+/* Counts sentences. A period/!/? is only a sentence boundary once any closing quotes
+   or brackets after it are accounted for — dialogue routinely ends like `while.”`
+   with no space between the period and the closing quote, which a naive
+   "punctuation then whitespace" split misses, silently merging several sentences
+   into one. */
+/* Common titles/abbreviations whose period isn't a sentence-ender ("Dr. Evendelle
+   said..." is one sentence, not two). Their periods are masked before splitting. */
+const SENTENCE_ABBREVIATIONS = /\b(?:Mr|Mrs|Ms|Mx|Dr|Prof|Sr|Jr|St|Capt|Lt|Gen|Col|Sgt|Cmdr|Adm|Gov|Sen|Rep|Pres|Rev|Fr|Msgr|vs|etc|approx|no|vol|ch|fig|figs|pp|Inc|Ltd|Co)\./g;
+
+function countSentences(text) {
+  if (!text) return 0;
+  const masked = text.replace(SENTENCE_ABBREVIATIONS, m => m.slice(0, -1) + ' ');
+  return (masked.match(/[^.!?…—]+[.!?…]+[)\]'"’”]*(?:\s|$)|[^.!?…—]+—[)\]'"’”]+(?:\s|$)|[^.!?…]+$/g) || []).length;
 }
 
 /* ── World Bible ── */
@@ -454,10 +522,10 @@ function updateStats() {
   const html    = document.getElementById('editor').innerHTML;
   const text    = htmlToCountableText(html);
   const words   = wordTokens(html).length;
-  const chars   = text.replace(/\s/g, '').length;
-  const paras   = (html.match(/<p[^>]*>/gi) || []).length || (text ? 1 : 0);
-  const sentences = text ? (text.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || []).length : 0;
-  const readMin = Math.max(1, Math.round(words / 200));
+  const chars   = text.length;
+  const paras   = countParagraphs(html);
+  const sentences = countSentences(text);
+  const readMin = Math.max(1, Math.round(words / 250));
 
   document.getElementById('stat-words').textContent        = words.toLocaleString();
   document.getElementById('stat-chars').textContent        = chars.toLocaleString();
@@ -542,11 +610,312 @@ function applySelectionFont(fontValue) {
   return true;
 }
 
+function applySelectionFontSize(sizeValue) {
+  const editor = document.getElementById('editor');
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !editor.contains(selection.anchorNode)) return false;
+  const range = selection.getRangeAt(0).cloneRange();
+  let fragment;
+  try { fragment = range.extractContents(); }
+  catch { alert('Select text within a single paragraph to change its size.'); return true; }
+  fragment.querySelectorAll('[style]').forEach(el => {
+    el.style.removeProperty('font-size');
+    if (!el.getAttribute('style')) el.removeAttribute('style');
+  });
+  const span = document.createElement('span');
+  span.style.fontSize = sizeValue;
+  span.appendChild(fragment);
+  range.insertNode(span);
+  const selectedRange = document.createRange();
+  selectedRange.selectNodeContents(span);
+  selection.removeAllRanges();
+  selection.addRange(selectedRange);
+  saveCurrentDoc();
+  return true;
+}
+
+function showDetectedFontSize(sizeValue) {
+  const select = document.getElementById('fmt-size');
+  if (!select || !sizeValue) return;
+  const rounded = `${Math.round(parseFloat(sizeValue) * 10) / 10}px`;
+  select.title = `Selected text size: ${rounded}`;
+  if (select.value === rounded) return;
+  let option = Array.from(select.options).find(item => item.value === rounded);
+  select.querySelectorAll('option[data-detected]').forEach(item => {
+    if (item.value !== rounded) item.remove();
+  });
+  if (!option) {
+    option = new Option(rounded.replace('px', ''), rounded);
+    option.dataset.detected = 'true';
+    select.add(option);
+  }
+  select.value = rounded;
+}
+
+function normalizeFontFamily(value) {
+  return value.toLowerCase().replace(/["']/g, '').replace(/\s*,\s*/g, ',').trim();
+}
+
+function showDetectedFont(fontValue) {
+  const select = document.getElementById('fmt-font');
+  if (!select || !fontValue) return;
+  const normalized = normalizeFontFamily(fontValue);
+  let option = Array.from(select.options).find(item => normalizeFontFamily(item.value) === normalized);
+  select.querySelectorAll('option[data-detected-font]').forEach(item => {
+    if (normalizeFontFamily(item.value) !== normalized) item.remove();
+  });
+  if (!option) {
+    const label = fontValue.split(',')[0].replace(/["']/g, '').trim();
+    option = new Option(label, fontValue);
+    option.dataset.detectedFont = 'true';
+    select.add(option);
+  }
+  select.value = option.value;
+  select.title = `Selected text font: ${option.textContent}`;
+}
+
+function detectCaretFont() {
+  const editor = document.getElementById('editor');
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return;
+  if (!selection.isCollapsed) {
+    const range = selection.getRangeAt(0);
+    const fonts = new Map();
+    const rangeRoot = range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+      ? range.commonAncestorContainer.parentElement
+      : range.commonAncestorContainer;
+    const walker = document.createTreeWalker(rangeRoot, NodeFilter.SHOW_TEXT);
+    let textNode;
+    while ((textNode = walker.nextNode())) {
+      if (!textNode.nodeValue.trim() || !range.intersectsNode(textNode)) continue;
+      const family = getComputedStyle(textNode.parentElement).fontFamily;
+      fonts.set(normalizeFontFamily(family), family);
+      if (fonts.size > 1) {
+        document.getElementById('fmt-font').value = '';
+        return;
+      }
+    }
+    if (fonts.size === 1) {
+      showDetectedFont(fonts.values().next().value);
+      return;
+    }
+  }
+  const node = selection.anchorNode;
+  const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  if (element instanceof Element && editor.contains(element)) {
+    showDetectedFont(getComputedStyle(element).fontFamily);
+  }
+}
+
+function detectCaretFontSize() {
+  const editor = document.getElementById('editor');
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return;
+  if (!selection.isCollapsed) {
+    const range = selection.getRangeAt(0);
+    const sizes = new Set();
+    const rangeRoot = range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+      ? range.commonAncestorContainer.parentElement
+      : range.commonAncestorContainer;
+    const walker = document.createTreeWalker(rangeRoot, NodeFilter.SHOW_TEXT);
+    let textNode;
+    while ((textNode = walker.nextNode())) {
+      if (!textNode.nodeValue.trim() || !range.intersectsNode(textNode)) continue;
+      sizes.add(getComputedStyle(textNode.parentElement).fontSize);
+      if (sizes.size > 1) {
+        document.getElementById('fmt-size').value = '';
+        return;
+      }
+    }
+    if (sizes.size === 1) {
+      showDetectedFontSize(sizes.values().next().value);
+      return;
+    }
+  }
+  const node = selection?.anchorNode;
+  const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  if (!(element instanceof Element) || !editor.contains(element)) return;
+  showDetectedFontSize(getComputedStyle(element).fontSize || '17px');
+}
+
+function selectedEditorBlocks() {
+  const editor = document.getElementById('editor');
+  const selection = window.getSelection();
+  if (!selection?.rangeCount || !editor.contains(selection.anchorNode)) return [];
+  const range = selection.getRangeAt(0);
+  return Array.from(editor.children).filter(block => {
+    try { return range.intersectsNode(block); } catch { return false; }
+  });
+}
+
+function applyLineSpacing(lineHeight) {
+  const editor = document.getElementById('editor');
+  const blocks = selectedEditorBlocks();
+  if (blocks.length) {
+    blocks.forEach(block => { block.style.lineHeight = lineHeight; });
+    saveCurrentDoc();
+  } else {
+    const d = docs.find(x => x.id === activeId);
+    if (!d) return;
+    d.lineHeight = lineHeight;
+    editor.style.lineHeight = lineHeight;
+    schedulePersist();
+  }
+  editor.focus();
+}
+
+function detectCaretLineSpacing() {
+  const editor = document.getElementById('editor');
+  const selection = window.getSelection();
+  const node = selection?.anchorNode;
+  let element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  if (!(element instanceof Element) || !editor.contains(element)) return;
+  if (element !== editor) element = element.closest('#editor > *') || element;
+  const computed = getComputedStyle(element);
+  const fontSize = parseFloat(computed.fontSize);
+  const lineHeight = parseFloat(computed.lineHeight);
+  if (!fontSize || !lineHeight) return;
+  const ratio = String(Math.round((lineHeight / fontSize) * 100) / 100);
+  const select = document.getElementById('fmt-line-spacing');
+  let option = Array.from(select.options).find(item => item.value === ratio);
+  if (!option) {
+    select.querySelectorAll('option[data-detected-line]').forEach(item => item.remove());
+    option = new Option(ratio, ratio);
+    option.dataset.detectedLine = 'true';
+    select.add(option);
+  }
+  select.value = ratio;
+}
+
+/* Converts a typed "--" into a real em dash (—) the moment another character is typed
+   after it — the same behavior Word/Google Docs/Scrivener have. Without this, typing a
+   dash the usual keyboard way (there's no em-dash key) leaves literal hyphens in the
+   document, which look right at a glance but are a different character from a real
+   em dash — throwing off character/sentence counts and general typography. Waits for
+   a following, non-hyphen character before converting so "---" isn't clobbered mid-type. */
+function setEditorCaret(node, pos) {
+  const selection = window.getSelection();
+  const newRange = document.createRange();
+  newRange.setStart(node, pos);
+  newRange.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(newRange);
+}
+
+function autoConvertEmDash() {
+  const editor = document.getElementById('editor');
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return;
+  const range = selection.getRangeAt(0);
+  const node = range.startContainer;
+  if (node.nodeType !== Node.TEXT_NODE || !editor.contains(node)) return;
+  const offset = range.startOffset;
+  const text = node.textContent;
+
+  // "--" or "---" run, converted once a following non-hyphen character is typed.
+  if (offset >= 3) {
+    const justTyped = text[offset - 1];
+    if (justTyped !== '-') {
+      const runEnd = offset - 1;
+      let runStart = runEnd;
+      while (runStart > 0 && text[runStart - 1] === '-') runStart--;
+      const runLength = runEnd - runStart;
+      if (runLength >= 2 && runLength <= 3) {
+        const before = text.slice(0, runStart);
+        const after = text.slice(offset);
+        node.textContent = before + '—' + justTyped + after;
+        setEditorCaret(node, before.length + 2);
+        return;
+      }
+    }
+  }
+
+  // A single hyphen with a space on each side ("word - word"), converted once the
+  // trailing space has been typed.
+  if (offset >= 3 && text[offset - 1] === ' ' && text[offset - 2] === '-' && text[offset - 3] === ' '
+    && (offset < 4 || text[offset - 4] !== '-')) {
+    const before = text.slice(0, offset - 3);
+    const after = text.slice(offset);
+    node.textContent = before + '—' + after;
+    setEditorCaret(node, before.length + 1);
+  }
+}
+
+/* One-time cleanup for dashes typed before autocorrect existed: converts "--"/"---",
+   or a single hyphen with a space on each side, into a real em dash, everywhere in the
+   current document. Leaves single hyphens with no surrounding spaces (compound words
+   like "well-known") untouched. */
+function convertTypedDashesToEmDash() {
+  const editor = document.getElementById('editor');
+  const before = editor.innerHTML;
+  const after = before
+    .replace(/(?<!-)-{2,3}(?!-)/g, '—')
+    .replace(/(?<!-) - (?!-)/g, '—');
+  if (after === before) { alert('No typed dashes ("--", "---", or " - ") found to convert.'); return; }
+  editor.innerHTML = after;
+  saveCurrentDoc();
+  updateStats();
+  renderTree();
+  alert('Converted typed dashes to em dashes (—) in this document.');
+}
+
 function applyBlock(tag) {
   if (tag === 'div') {
-    document.execCommand('insertHTML', false, '<div class="scene-break">· · ·</div><p><br></p>');
-    document.getElementById('fmt-block').value = 'p';
-    document.getElementById('editor').focus();
+    const editor = document.getElementById('editor');
+    const selection = window.getSelection();
+    if (!selection?.rangeCount || !editor.contains(selection.anchorNode)) return;
+    const range = selection.getRangeAt(0);
+    const anchorNode = selection?.anchorNode;
+    const anchorElement = anchorNode?.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : anchorNode;
+    const currentBlock = anchorElement instanceof Element
+      ? anchorElement.closest('#editor > *')
+      : null;
+    const sourceStyle = anchorElement instanceof Element && editor.contains(anchorElement)
+      ? getComputedStyle(anchorElement)
+      : getComputedStyle(editor);
+    const sourceFontSize = sourceStyle.fontSize;
+    const sourceFontFamily = sourceStyle.fontFamily;
+    const sourceLineHeight = sourceStyle.lineHeight;
+    range.deleteContents();
+    range.collapse(true);
+
+    const sceneBreak = document.createElement('div');
+    sceneBreak.className = 'scene-break';
+    sceneBreak.textContent = '· · ·';
+    sceneBreak.style.lineHeight = sourceLineHeight;
+
+    let followingParagraph;
+    if (currentBlock) {
+      followingParagraph = currentBlock.cloneNode(false);
+      followingParagraph.removeAttribute('id');
+      followingParagraph.classList.remove('current-line');
+      followingParagraph.classList.add('scene-break-following');
+      const remainderRange = document.createRange();
+      remainderRange.setStart(range.startContainer, range.startOffset);
+      remainderRange.setEnd(currentBlock, currentBlock.childNodes.length);
+      followingParagraph.appendChild(remainderRange.extractContents());
+      if (!followingParagraph.textContent && !followingParagraph.querySelector('br')) {
+        followingParagraph.appendChild(document.createElement('br'));
+      }
+      currentBlock.after(sceneBreak, followingParagraph);
+    } else {
+      followingParagraph = document.createElement('p');
+      followingParagraph.className = 'scene-break-following';
+      followingParagraph.appendChild(document.createElement('br'));
+      editor.append(sceneBreak, followingParagraph);
+    }
+    followingParagraph.style.fontSize = sourceFontSize;
+    followingParagraph.style.lineHeight = sourceLineHeight;
+    followingParagraph.style.setProperty('font-family', sourceFontFamily, 'important');
+
+    const nextTextRange = document.createRange();
+    nextTextRange.selectNodeContents(followingParagraph);
+    nextTextRange.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(nextTextRange);
+    editor.focus();
+    saveCurrentDoc();
+    updateStats();
     return;
   }
   document.execCommand('formatBlock', false, tag);
@@ -2305,9 +2674,9 @@ function setupEventListeners() {
     btn.addEventListener('click', () => fmt(btn.dataset.cmd));
   });
 
-  /* Block format select */
-  document.getElementById('fmt-block').addEventListener('change', function() {
-    applyBlock(this.value);
+  /* One-click paragraph styles */
+  document.querySelectorAll('[data-block]').forEach(btn => {
+    btn.addEventListener('click', () => applyBlock(btn.dataset.block));
   });
 
   /* Font select — applies to the selection if there is one, otherwise sets the document's font */
@@ -2322,8 +2691,25 @@ function setupEventListeners() {
     document.getElementById('editor').focus();
   });
 
+  /* Font size — selection first, otherwise the full document */
+  document.getElementById('fmt-size').addEventListener('change', function() {
+    const d = docs.find(x => x.id === activeId);
+    if (!d) return;
+    if (!applySelectionFontSize(this.value)) {
+      d.fontSize = this.value;
+      document.getElementById('editor').style.fontSize = this.value;
+      schedulePersist();
+    }
+    document.getElementById('editor').focus();
+  });
+
+  document.getElementById('fmt-line-spacing').addEventListener('change', function() {
+    applyLineSpacing(this.value);
+  });
+
   /* Editor input */
   document.getElementById('editor').addEventListener('input', () => {
+    autoConvertEmDash();
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => { saveCurrentDoc(); renderTree(); }, 400);
     updateStats();
@@ -2331,8 +2717,17 @@ function setupEventListeners() {
   });
   document.getElementById('editor').addEventListener('keyup', centerCurrentLine);
   document.getElementById('editor').addEventListener('click', centerCurrentLine);
+  document.getElementById('editor').addEventListener('keyup', detectCaretFontSize);
+  document.getElementById('editor').addEventListener('click', detectCaretFontSize);
+  document.getElementById('editor').addEventListener('keyup', detectCaretFont);
+  document.getElementById('editor').addEventListener('click', detectCaretFont);
+  document.getElementById('editor').addEventListener('keyup', detectCaretLineSpacing);
+  document.getElementById('editor').addEventListener('click', detectCaretLineSpacing);
   document.addEventListener('selectionchange', () => {
     if (typewriterMode) centerCurrentLine();
+    detectCaretFontSize();
+    detectCaretFont();
+    detectCaretLineSpacing();
   });
 
   /* Revision and writing-mode toolbar */
@@ -2455,7 +2850,7 @@ function setupEventListeners() {
   });
   document.getElementById('btn-menu').addEventListener('click', e => { e.stopPropagation(); toggleOptionsMenu(); });
   document.querySelectorAll('#options-menu [data-option]').forEach(btn => btn.addEventListener('click', () => {
-    const actions = { typewriter: () => setTypewriterMode(), proofing: toggleProofing, beats: toggleBeats, template: applyBeatTemplate, split: () => toggleSplit(), margin: () => toggleMargin(), compile: openCompile, snapshot: takeSnapshot, book: openBookMode, focus: toggleFocus };
+    const actions = { typewriter: () => setTypewriterMode(), proofing: toggleProofing, beats: toggleBeats, template: applyBeatTemplate, split: () => toggleSplit(), margin: () => toggleMargin(), fixdashes: convertTypedDashesToEmDash, compile: openCompile, snapshot: takeSnapshot, book: openBookMode, focus: toggleFocus };
     actions[btn.dataset.option](); toggleOptionsMenu(false);
   }));
   document.addEventListener('click', e => { if (!e.target.closest('#options-menu') && !e.target.closest('#btn-menu')) toggleOptionsMenu(false); });

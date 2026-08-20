@@ -309,6 +309,11 @@ body {
 .fmt-btn:hover { background: var(--surface2); color: var(--text); }
 .fmt-btn.active { background: var(--text); color: var(--surface); }
 
+.fmt-block-buttons { display: flex; align-items: center; gap: 1px; }
+.fmt-style-btn { width: auto; min-width: 28px; padding: 0 6px; font-size: 11px; }
+.fmt-size-select { width: 55px; }
+.fmt-line-select { width: 58px; }
+
 .fmt-sep {
   width: 1px;
   height: 18px;
@@ -382,7 +387,7 @@ body {
   outline: none;
   font-family: 'Playfair Display', serif;
   font-size: 17px;
-  line-height: 1.85;
+  line-height: 1;
   color: var(--text);
   caret-color: var(--accent);
 }
@@ -2354,6 +2359,12 @@ body.margin-mode #editor-wrap { max-width: 680px; flex: 3 1 480px; }
   100% { background: transparent; box-shadow: 0 0 0 0 transparent; }
 }
 .scene-break { margin: 20px 0; text-align: center; letter-spacing: 0.4em; color: var(--text-faint); }
+
+/* Keep post-break text on the normal document color while its cloned paragraph
+   preserves the surrounding font and flow. */
+#editor .scene-break-following {
+  color: var(--text) !important;
+}
 #doc-notes-summary { display: block; width: 100%; margin-top: 28px; padding: 11px 0 0; border: 0; border-top: 1px solid var(--border-light); background: transparent; color: var(--accent-text); text-align: left; cursor: pointer; }
 #doc-notes-summary[hidden] { display: none; }
 

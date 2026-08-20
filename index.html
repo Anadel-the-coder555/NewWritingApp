@@ -85,15 +85,16 @@
 
     <!-- Formatting Toolbar -->
     <div id="editor-toolbar">
-      <select class="fmt-select" id="fmt-block">
-        <option value="p">Paragraph</option>
-        <option value="h1">Heading 1</option>
-        <option value="h2">Heading 2</option>
-        <option value="div">Scene Break</option>
-        <option value="blockquote">Blockquote</option>
-      </select>
+      <div class="fmt-block-buttons" role="group" aria-label="Paragraph style">
+        <button class="fmt-btn fmt-style-btn" title="Paragraph" aria-label="Paragraph" data-block="p">P</button>
+        <button class="fmt-btn fmt-style-btn" title="Heading 1" aria-label="Heading 1" data-block="h1">H1</button>
+        <button class="fmt-btn fmt-style-btn" title="Heading 2" aria-label="Heading 2" data-block="h2">H2</button>
+        <button class="fmt-btn fmt-style-btn" title="Blockquote" aria-label="Blockquote" data-block="blockquote">❝</button>
+        <button class="fmt-btn fmt-style-btn" title="Scene break" aria-label="Insert scene break" data-block="div">•••</button>
+      </div>
       <div class="fmt-sep"></div>
       <select class="fmt-select" id="fmt-font" title="Font — applies to selected text, or the whole document if nothing is selected">
+        <option value="" disabled>–</option>
         <option value="'Playfair Display', serif">Playfair Display</option>
         <option value="'EB Garamond', serif">EB Garamond</option>
         <option value="'Lora', serif">Lora</option>
@@ -108,6 +109,28 @@
         <option value="'Dancing Script', cursive">Dancing Script</option>
         <option value="'Crimson Text', serif">Crimson</option>
         <option value="'IM Fell English', serif">IM Fell English</option>
+      </select>
+      <select class="fmt-select fmt-size-select" id="fmt-size" title="Font size — applies to selected text, or the whole document if nothing is selected" aria-label="Font size">
+        <option value="" selected disabled>–</option>
+        <option value="12px">12</option>
+        <option value="14px">14</option>
+        <option value="16px">16</option>
+        <option value="17px">17</option>
+        <option value="18px">18</option>
+        <option value="20px">20</option>
+        <option value="24px">24</option>
+        <option value="28px">28</option>
+        <option value="32px">32</option>
+        <option value="36px">36</option>
+      </select>
+      <select class="fmt-select fmt-line-select" id="fmt-line-spacing" title="Line spacing — applies to the current or selected paragraphs" aria-label="Line spacing">
+        <option value="1" selected>1.0</option>
+        <option value="1.15">1.15</option>
+        <option value="1.5">1.5</option>
+        <option value="1.85">1.85</option>
+        <option value="2">2</option>
+        <option value="2.5">2.5</option>
+        <option value="3">3</option>
       </select>
       <div class="fmt-sep"></div>
       <button class="fmt-btn" title="Bold" data-cmd="bold"><b>B</b></button>
@@ -386,6 +409,7 @@
   <button data-option="template"><span>Apply Three-Act beats</span><i></i></button>
   <button data-option="split"><span>Split reference</span><i></i></button>
   <button data-option="margin"><span>Margin notes</span><i></i></button>
+  <button data-option="fixdashes"><span>Convert typed dashes to em dash</span><i></i></button>
   <div class="options-group-label">Project</div>
   <button data-option="compile"><span>Compile &amp; export…</span><kbd>⇧⌘E</kbd></button>
   <button data-option="snapshot"><span>Take snapshot</span><kbd>⌘S</kbd></button>
