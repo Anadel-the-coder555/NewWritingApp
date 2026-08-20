@@ -2582,6 +2582,7 @@ function renderProjects() {
           <button data-project-action="compile" type="button">Compile</button>
           <button data-project-action="rename" type="button">Rename</button>
           <button data-project-action="cover" type="button">Upload cover image</button>
+          <button data-project-action="export" type="button">Export project file…</button>
         </div>
       </div>
       <input class="project-cover-input" type="file" accept="image/png,image/jpeg,image/webp,image/avif">
@@ -2621,6 +2622,7 @@ function renderProjects() {
     if (action === 'compile') { switchProject(id); openCompile(); }
     if (action === 'rename') renameProject(id);
     if (action === 'cover') button.closest('.project-card').querySelector('.project-cover-input').click();
+    if (action === 'export') exportProjectFile(id);
   }));
   document.querySelectorAll('.project-cover-input').forEach(input => {
     input.addEventListener('click', e => e.stopPropagation());
@@ -2701,6 +2703,98 @@ function createProject() {
   nextId = 2; activeId = 1; sessionBaseWords = getSessionBase();
   document.getElementById('project-title-input').value = title.trim();
   persistState(); saveProjectToArchive(); document.getElementById('projects-overlay').classList.remove('open'); renderTree(); loadDoc(activeId);
+}
+
+/* ────────────────────────────────────────
+   Project File Export / Import
+   A project is packaged as a single .folio file (JSON under the hood) containing
+   everything needed to reopen it on another device with no account or login: every
+   doc's content, the project's cover image (pulled out of IndexedDB, since covers
+   aren't part of the archived project record), and saved Book Formatter settings.
+──────────────────────────────────────── */
+const FOLIO_FILE_VERSION = 1;
+
+async function exportProjectFile(id) {
+  if (id === currentProjectId) saveProjectToArchive();
+  const project = projectArchive().find(p => p.id === id);
+  if (!project) { alert('That project could not be found.'); return; }
+
+  let cover = null;
+  try { cover = await getStoredCover(id); } catch (e) { /* no cover saved */ }
+
+  let formatterSettings = null;
+  try { formatterSettings = JSON.parse(localStorage.getItem(`folio-formatter:${id}`) || 'null'); } catch (e) { formatterSettings = null; }
+
+  const payload = {
+    folioFile: true,
+    version: FOLIO_FILE_VERSION,
+    exportedAt: new Date().toISOString(),
+    project: { id: project.id, title: project.title, docs: project.docs, nextId: project.nextId, activeId: project.activeId, updatedAt: project.updatedAt },
+    cover,
+    formatterSettings
+  };
+
+  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json;charset=utf-8' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  const safeName = (project.title || 'project').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'project';
+  link.download = `${safeName}.folio`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read file'));
+    reader.onload = () => resolve(reader.result);
+    reader.readAsText(file);
+  });
+}
+
+async function importProjectFile(file) {
+  if (!file) return;
+  let data;
+  try {
+    data = JSON.parse(await readFileAsText(file));
+  } catch (e) {
+    alert('That file could not be read. Choose a .folio project file exported from Folio.');
+    return;
+  }
+  if (!data || !data.folioFile || !data.project || !Array.isArray(data.project.docs)) {
+    alert('That file is not a valid Folio project file.');
+    return;
+  }
+
+  saveProjectToArchive(); // flush the currently open project before switching away from it
+
+  const archive = projectArchive();
+  let title = data.project.title || 'Imported Project';
+  if (archive.some(p => p.title === title)) title = `${title} (imported)`;
+
+  const newId = `project-${Date.now()}`;
+  const importedDocs = data.project.docs.map(d => ({ ...d }));
+  const newProject = {
+    id: newId,
+    title,
+    docs: importedDocs,
+    nextId: typeof data.project.nextId === 'number' ? data.project.nextId : Math.max(0, ...importedDocs.map(d => d.id)) + 1,
+    activeId: importedDocs.some(d => d.id === data.project.activeId) ? data.project.activeId : (importedDocs[0] ? importedDocs[0].id : 1),
+    updatedAt: new Date().toISOString()
+  };
+
+  archive.push(newProject);
+  if (!writeProjectArchive(archive)) return;
+
+  if (data.cover) {
+    try { await setStoredCover(newId, data.cover); } catch (e) { console.error('Could not save imported cover', e); }
+  }
+  if (data.formatterSettings) {
+    try { localStorage.setItem(`folio-formatter:${newId}`, JSON.stringify(data.formatterSettings)); } catch (e) { /* ignore */ }
+  }
+
+  switchProject(newId);
+  renderProjects();
 }
 
 /* ────────────────────────────────────────
@@ -2917,6 +3011,27 @@ function setupEventListeners() {
   /* Project shelf and compilation */
   document.getElementById('btn-projects').addEventListener('click', openProjects);
   document.getElementById('new-project-btn').addEventListener('click', createProject);
+  document.getElementById('import-project-btn').addEventListener('click', () => document.getElementById('import-project-input').click());
+  document.getElementById('import-project-input').addEventListener('change', e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (file) importProjectFile(file);
+  });
+  document.getElementById('projects-grid').addEventListener('dragover', e => {
+    if (![...e.dataTransfer.items].some(item => item.kind === 'file')) return;
+    e.preventDefault();
+    document.getElementById('projects-grid').classList.add('drag-over');
+  });
+  document.getElementById('projects-grid').addEventListener('dragleave', e => {
+    if (e.target === document.getElementById('projects-grid')) document.getElementById('projects-grid').classList.remove('drag-over');
+  });
+  document.getElementById('projects-grid').addEventListener('drop', e => {
+    if (e.target.closest('.project-card')) return; // let the per-cover drop handler deal with cover images
+    e.preventDefault();
+    document.getElementById('projects-grid').classList.remove('drag-over');
+    const file = [...e.dataTransfer.files].find(f => f.name.endsWith('.folio') || f.type === 'application/json');
+    if (file) importProjectFile(file);
+  });
   document.getElementById('book-formatter-btn').addEventListener('click', openFormatter);
   document.getElementById('formatter-back').addEventListener('click', closeFormatter);
   document.getElementById('formatter-export').addEventListener('click', exportFormattedBook);
