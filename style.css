@@ -2435,4 +2435,36 @@ body.margin-mode #editor-wrap { max-width: 680px; flex: 3 1 480px; }
   }
 
   #editor-toolbar > * { flex-shrink: 0; }
+
+  /* Book Mode: the desktop two-page spread is a fixed 960×640 layout (480px per
+     page) that cannot fit side by side on a ~375px screen — #book-overlay was
+     clipping it to a thin unreadable sliver and the editable surface sat mostly
+     off-screen, unreachable to tap into. Below this width app.js switches Book
+     Mode to a single-page-at-a-time model (bookPhoneIdx) rendered into the same
+     #book-editor element, and this block turns that one page into a full-width
+     surface instead of a fixed-width column. */
+  #book-wrap { perspective: none; margin-top: 0; width: 100%; padding: 0 4vw; box-sizing: border-box; }
+  #book { width: 100%; max-width: 440px; height: 82vh; margin: 0 auto; }
+  .book-page { position: static; width: 100%; height: 100%; box-shadow: none; }
+  .book-page-left { display: none; }
+  .book-page-right { border-radius: 8px; }
+  .book-page-inner { padding: 16px 18px; }
+  #book-spine { display: none; }
+  #book-curl { display: none; }
+  #book-flip { display: none !important; }
+  .book-page-content, #book-editor { font-size: 16px; line-height: 1.6; }
+  #book-controls { flex-wrap: wrap; justify-content: center; padding: 0 12px; row-gap: 8px; }
+
+  /* Book Formatter: fixed 260px control rail + a fixed ≥600px-wide page preview
+     left almost nothing of the preview visible and clipped the header buttons
+     off the right edge of the screen. Stack controls above the preview and
+     shrink the (otherwise print-trim-sized) page to fit via zoom, which — unlike
+     transform: scale() — reflows layout so it doesn't leave a leftover blank gap
+     the width of the original page. */
+  .formatter-header { flex-wrap: wrap; min-height: auto; padding: 10px 12px; row-gap: 8px; }
+  .formatter-header strong { flex: 1 1 100%; order: -1; text-align: center; margin: 0; }
+  .formatter-workspace { flex-direction: column; overflow-y: auto; }
+  .formatter-controls { width: 100%; flex: 0 0 auto; max-height: 42vh; border-right: none; border-bottom: 1px solid var(--border); }
+  #formatter-preview { padding: 20px 12px 40px; }
+  .formatter-page { zoom: 0.58; }
 }

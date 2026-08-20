@@ -3031,14 +3031,14 @@ function setupEventListeners() {
   /* Book Mode listeners — ADD THESE */
   document.getElementById('btn-book').addEventListener('click', openBookMode);
   document.getElementById('book-close').addEventListener('click', closeBookMode);
-  document.getElementById('book-next').addEventListener('click', bookFlipForward);
-  document.getElementById('book-prev').addEventListener('click', bookFlipBackward);
-  document.getElementById('book-curl').addEventListener('click', bookFlipForward);
+  document.getElementById('book-next').addEventListener('click', () => { if (isPhoneWidth()) bookPhoneNext(); else bookFlipForward(); });
+  document.getElementById('book-prev').addEventListener('click', () => { if (isPhoneWidth()) bookPhonePrev(); else bookFlipBackward(); });
+  document.getElementById('book-curl').addEventListener('click', () => { if (isPhoneWidth()) bookPhoneNext(); else bookFlipForward(); });
   document.getElementById('book-editor').addEventListener('input', bookUpdateWC);
   document.addEventListener('keydown', e => {
     if (!document.getElementById('book-overlay').classList.contains('open')) return;
-    if (e.key === 'PageDown') { e.preventDefault(); bookFlipForward(); }
-    if (e.key === 'PageUp')   { e.preventDefault(); bookFlipBackward(); }
+    if (e.key === 'PageDown') { e.preventDefault(); if (isPhoneWidth()) bookPhoneNext(); else bookFlipForward(); }
+    if (e.key === 'PageUp')   { e.preventDefault(); if (isPhoneWidth()) bookPhonePrev(); else bookFlipBackward(); }
     if (e.key === 'Escape')   { closeBookMode(); }
   });
 
@@ -3049,11 +3049,13 @@ function setupEventListeners() {
   const paras = text.split('\n').filter(p => p.trim().length > 0);
   if (paras.length === 0) return;
   bookInsertParagraphsAtCursor(el, paras);
-  setTimeout(() => bookReSplitCurrentPage('right'), 100);
+  if (isPhoneWidth()) setTimeout(() => bookPhoneResplit(), 100);
+  else setTimeout(() => bookReSplitCurrentPage('right'), 100);
 });
 
 document.getElementById('book-left-content').addEventListener('paste', e => {
   e.preventDefault();
+  if (isPhoneWidth()) return; // left page is unused/hidden in the phone single-page layout
   const text = e.clipboardData.getData('text/plain');
   const el = document.getElementById('book-left-content');
   const paras = text.split('\n').filter(p => p.trim().length > 0);
@@ -3157,6 +3159,7 @@ function bookInsertParagraphsAtCursor(el, paras) {
 let bookPages    = [];
 let bookSpread   = 0;
 let bookFlipping = false;
+let bookPhoneIdx = -1; // single-page index used instead of bookSpread when isPhoneWidth()
 
 function openBookMode() {
   saveCurrentDoc(); // flush any edit still sitting in the debounced autosave before reading d.content
@@ -3184,14 +3187,16 @@ function openBookMode() {
   while (bookPages.length < 2) bookPages.push([]);
 
   bookSpread   = -1;
+  bookPhoneIdx = -1;
   bookFlipping = false;
 
   document.getElementById('book-overlay').classList.add('open');
-  bookRenderSpread();
+  if (isPhoneWidth()) bookRenderPhonePage(); else bookRenderSpread();
 }
 
 function closeBookMode() {
-  if (bookSpread >= 0) bookSaveBothPages();
+  if (isPhoneWidth()) bookPhoneSaveCurrentPage();
+  else if (bookSpread >= 0) bookSaveBothPages();
 
   const allParas = bookPages.flat();
   const html = allParas.map(p => p === BOOK_SCENE_BREAK ? '<div class="scene-break">· · ·</div>' : `<p>${p}</p>`).join('');
@@ -3270,6 +3275,98 @@ function bookRenderSpread() {
 
   rightEl.focus();
   bookUpdateWC();
+}
+
+/* Phone layout: the two-page spread's fixed 480px-wide pages can't be laid side
+   by side on a ~375px screen, so on phone Book Mode shows bookPages one at a time
+   in the same #book-editor surface, keyed by bookPhoneIdx instead of bookSpread. */
+function bookRenderPhonePage() {
+  const chapter = BOOK_CHAPTER_LABEL();
+  const rightEl = document.getElementById('book-editor');
+
+  if (bookPhoneIdx < 0) {
+    document.getElementById('book-right-chapter').textContent = '';
+    document.getElementById('book-right-num').textContent     = '';
+    document.getElementById('book-spread-label').textContent  = 'Title page';
+    rightEl.contentEditable = 'false';
+    rightEl.style.cursor    = 'default';
+    rightEl.innerHTML = `
+      <div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;opacity:0.75;">
+        <div style="font-family:'EB Garamond',serif;font-size:22px;font-weight:600;color:var(--text);letter-spacing:0.03em;margin-bottom:16px;line-height:1.2;">${chapter}</div>
+        <div style="width:50px;height:1px;background:var(--border);margin:0 auto 16px;"></div>
+        <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-faint);letter-spacing:0.18em;text-transform:uppercase;">Tap Next to begin</div>
+      </div>`;
+    bookUpdateWC();
+    return;
+  }
+
+  document.getElementById('book-right-chapter').textContent = chapter;
+  document.getElementById('book-right-num').textContent     = bookPhoneIdx + 1;
+  document.getElementById('book-spread-label').textContent  = `Page ${bookPhoneIdx + 1} of ${bookPages.length}`;
+
+  const page = bookPages[bookPhoneIdx] || [];
+  rightEl.contentEditable = 'true';
+  rightEl.style.cursor    = 'text';
+  rightEl.innerHTML = page.length > 0
+    ? page.map((p, i) => bookParagraphHTML(p, i !== 0)).join('')
+    : '';
+
+  rightEl.focus();
+  bookUpdateWC();
+}
+
+function bookPhoneSaveCurrentPage() {
+  if (bookPhoneIdx < 0) return;
+  bookPages[bookPhoneIdx] = bookSerializePage(document.getElementById('book-editor'));
+}
+
+function bookPhoneNext() {
+  bookPhoneSaveCurrentPage();
+  if (bookPhoneIdx < 0) { bookPhoneIdx = 0; bookRenderPhonePage(); return; }
+  if (bookPhoneIdx >= bookPages.length - 1) bookPages.push([]);
+  bookPhoneIdx++;
+  bookRenderPhonePage();
+}
+
+function bookPhonePrev() {
+  if (bookPhoneIdx <= -1) return;
+  bookPhoneSaveCurrentPage();
+  bookPhoneIdx--;
+  bookRenderPhonePage();
+}
+
+/* Mirrors bookReSplitCurrentPage but re-splits from a single bookPhoneIdx onward
+   instead of from a spread's left/right index. */
+function bookPhoneResplit() {
+  bookPhoneSaveCurrentPage();
+
+  const paras    = bookPages.slice(bookPhoneIdx).flat();
+  const totalLen = paras.reduce((sum, p) => sum + bookVisibleLength(p), 0);
+
+  if (totalLen <= CHARS_PER_PAGE) {
+    bookRenderPhonePage();
+    return;
+  }
+
+  const newPages = [];
+  let currentPage = [];
+  let currentLen  = 0;
+
+  paras.forEach(para => {
+    const len = bookVisibleLength(para);
+    if (currentLen + len > CHARS_PER_PAGE && currentPage.length > 0) {
+      newPages.push(currentPage);
+      currentPage = [];
+      currentLen  = 0;
+    }
+    currentPage.push(para);
+    currentLen += len;
+  });
+
+  if (currentPage.length > 0) newPages.push(currentPage);
+
+  bookPages.splice(bookPhoneIdx, bookPages.length - bookPhoneIdx, ...newPages);
+  bookRenderPhonePage();
 }
 
 function bookSaveBothPages() {
