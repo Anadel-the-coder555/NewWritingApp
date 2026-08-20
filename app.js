@@ -1692,14 +1692,29 @@ function escapeHTML(value) {
   return div.innerHTML;
 }
 
+function isPhoneWidth() {
+  return window.matchMedia('(max-width: 640px)').matches;
+}
+
 function toggleSidebar(open) {
   document.body.classList.toggle('sidebar-collapsed', !open);
   localStorage.setItem('folio-sidebar-open', String(open));
+  // On a phone-width screen the sidebar and inspector are both full fixed-width
+  // columns fighting for the same tiny viewport — having both open at once leaves
+  // no room for the editor, so opening one closes the other.
+  if (open && isPhoneWidth()) {
+    document.body.classList.add('inspector-collapsed');
+    localStorage.setItem('folio-inspector-open', 'false');
+  }
 }
 
 function toggleInspector(open) {
   document.body.classList.toggle('inspector-collapsed', !open);
   localStorage.setItem('folio-inspector-open', String(open));
+  if (open && isPhoneWidth()) {
+    document.body.classList.add('sidebar-collapsed');
+    localStorage.setItem('folio-sidebar-open', 'false');
+  }
 }
 
 function showInspectorPanel(name) {
@@ -2830,9 +2845,11 @@ function setupEventListeners() {
   document.getElementById('inspector-collapse').addEventListener('click', () => toggleInspector(false));
   document.getElementById('inspector-expand').addEventListener('click', () => toggleInspector(true));
   document.querySelectorAll('.inspector-tab').forEach(btn => btn.addEventListener('click', () => showInspectorPanel(btn.dataset.panel)));
-  /* Primary navigation and synopsis start visible; collapse is session-only. */
-  toggleSidebar(true);
-  toggleInspector(true);
+  /* Primary navigation and synopsis start visible on desktop; on a phone-width screen
+     the sidebar and inspector are fixed-width columns that would otherwise squeeze the
+     editor itself down to nothing, so both start collapsed and open on demand instead. */
+  toggleSidebar(!isPhoneWidth());
+  toggleInspector(!isPhoneWidth());
 
   /* Session, beats, revisions, and notes */
   document.getElementById('writing-session').addEventListener('click', toggleSession);
