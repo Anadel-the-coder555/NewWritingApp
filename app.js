@@ -421,7 +421,12 @@ function saveCurrentDoc() {
    etc. — routinely embeds a sizeable <style> block of CSS class definitions, which a
    naive tag-stripping regex has no way to know isn't visible body text). */
 function stripHiddenHtml(html) {
+  const hidden = '(?:<!--[\\s\\S]*?-->|<style[^>]*>[\\s\\S]*?<\\/style>|<script[^>]*>[\\s\\S]*?<\\/script>)';
   return (html || '')
+    // Hidden content sitting before any real content starts isn't "between" two
+    // words — it's not part of the text at all, so it shouldn't leave a stray
+    // leading space once the surrounding markup is trimmed off.
+    .replace(new RegExp(`^(?:\\s*${hidden})+`, 'i'), '')
     .replace(/<!--[\s\S]*?-->/g, ' ')
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ');
@@ -433,17 +438,27 @@ function stripHiddenHtml(html) {
    whitespace introduced by markup itself — a paragraph boundary — gets normalized,
    to exactly one character, matching how a word processor represents a paragraph
    break rather than however many tags happen to sit at that boundary. */
+/* Decodes HTML entities (&amp; &lt; &quot; &#39; …) back to real characters. Browsers
+   always serialize a literal "&" in text content as "&amp;" in innerHTML — without
+   this, "Mom & Dad" would be counted as "Mom &amp; Dad" (4 extra characters, plus
+   "amp" reading as a fake extra word since it's a run of letters). A <textarea> is
+   used rather than a generic element because assigning to its innerHTML decodes
+   entities into .value without the text ever being re-parsed as markup. */
+function decodeHtmlEntities(text) {
+  const el = document.createElement('textarea');
+  el.innerHTML = text;
+  return el.value;
+}
+
 function htmlToCountableText(html) {
-  return stripHiddenHtml(html)
+  const withBreaks = stripHiddenHtml(html)
     .replace(/<\/(p|div|h1|h2|h3|blockquote|li)>/gi, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&#160;/g, ' ')
-    .replace(/&#xa0;/gi, ' ')
+    .replace(/<[^>]+>/g, '');
+  return decodeHtmlEntities(withBreaks)
     .replace(/\n{2,}/g, '\n')
     .replace(/\n/g, ' ')
-    .trim();
+    .trimEnd();
 }
 
 /* Finds actual word tokens: runs of letters/digits, with an internal apostrophe
@@ -486,8 +501,17 @@ const SENTENCE_ABBREVIATIONS = /\b(?:Mr|Mrs|Ms|Mx|Dr|Prof|Sr|Jr|St|Capt|Lt|Gen|C
 
 function countSentences(text) {
   if (!text) return 0;
-  const masked = text.replace(SENTENCE_ABBREVIATIONS, m => m.slice(0, -1) + ' ');
-  return (masked.match(/[^.!?…—]+[.!?…]+[)\]'"’”]*(?:\s|$)|[^.!?…—]+—[)\]'"’”]+(?:\s|$)|[^.!?…]+$/g) || []).length;
+  let masked = text.replace(SENTENCE_ABBREVIATIONS, m => m.slice(0, -1) + ' ');
+  // Mark an em dash immediately followed by closing quotes/brackets and then a
+  // boundary (interrupted dialogue: `"Wait—" she said.`) as a sentence end, using a
+  // placeholder so the match below can treat it as one more ordinary terminator
+  // instead of needing dash-specific logic. A plain mid-sentence dash ("he turned—
+  // slowly—and walked away") is deliberately left untouched: earlier versions of this
+  // regex excluded "—" from the "ordinary content" character class outright, which
+  // meant any dash NOT immediately followed by closing punctuation had nowhere to
+  // match at all, and the text around it was silently skipped rather than counted.
+  masked = masked.replace(/—([)\]'"’”]+)(?=\s|$)/g, '—$1 ');
+  return (masked.match(/[^.!?… ]+(?:[.!?…]+[)\]'"’”]*| )(?:\s|$)|[^.!?… ]+$/g) || []).length;
 }
 
 /* ── World Bible ── */
