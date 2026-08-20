@@ -36,6 +36,12 @@
   <span id="wordcount-display">0 words</span>
   <button class="tb-btn tb-compact" id="btn-command" title="Command palette (Ctrl/Cmd+K)">⌘K</button>
   <button class="tb-btn tb-compact" id="btn-menu" title="Writing options">⋯</button>
+  <button class="tb-btn tb-compact" id="btn-settings" title="Appearance settings">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+      <circle cx="8" cy="8" r="2.2"/>
+      <path d="M8 1.6v1.6M8 12.8v1.6M14.4 8h-1.6M3.2 8H1.6M12.5 3.5l-1.13 1.13M4.63 11.37 3.5 12.5M12.5 12.5l-1.13-1.13M4.63 4.63 3.5 3.5"/>
+    </svg>
+  </button>
 </div>
 
 <!-- Workspace -->
@@ -87,7 +93,7 @@
         <option value="blockquote">Blockquote</option>
       </select>
       <div class="fmt-sep"></div>
-      <select class="fmt-select" id="fmt-font" title="Font">
+      <select class="fmt-select" id="fmt-font" title="Font — applies to selected text, or the whole document if nothing is selected">
         <option value="'Playfair Display', serif">Playfair Display</option>
         <option value="'EB Garamond', serif">EB Garamond</option>
         <option value="'Lora', serif">Lora</option>
@@ -322,14 +328,14 @@
         <div class="panel-actions"><button class="panel-action-btn" id="inspector-annotate">Annotate selection</button><button class="panel-action-btn" id="margin-toggle">Show annotations</button></div>
       </div>
       <section id="document-notepad" class="document-notepad lined">
-        <div class="notepad-bar">
-          <span>Notepad</span>
-          <div>
+        <textarea id="notepad-text" placeholder="Notes about this document…" spellcheck="true"></textarea>
+        <div class="notepad-toolbar">
+          <span class="notepad-label">Notepad</span>
+          <div class="notepad-toolbar-actions">
             <button id="notepad-lines" type="button">No lines</button>
             <button id="notepad-expand" type="button">Full screen</button>
           </div>
         </div>
-        <textarea id="notepad-text" placeholder="Notes about this document…" spellcheck="true"></textarea>
       </section>
     </div>
 
@@ -387,13 +393,52 @@
   <button data-option="focus"><span>Focus mode</span><kbd>F11</kbd></button>
 </div>
 
+<!-- Appearance Settings Menu -->
+<div id="settings-menu" role="menu">
+  <div class="options-group-label">Appearance</div>
+  <div class="mode-toggle-row">
+    <button class="mode-btn" data-mode="light" title="Light mode">☀ Light</button>
+    <button class="mode-btn" data-mode="dark" title="Dark mode">☾ Dark</button>
+  </div>
+  <div class="options-group-label">Palette</div>
+  <div class="theme-swatch-grid">
+    <button class="theme-swatch" data-theme="sage" style="--swatch:#5f7355" title="Sage"><span class="swatch-dot"></span>Sage</button>
+    <button class="theme-swatch" data-theme="slate" style="--swatch:#4a6fa5" title="Slate"><span class="swatch-dot"></span>Slate</button>
+    <button class="theme-swatch" data-theme="sepia" style="--swatch:#a1662f" title="Sepia"><span class="swatch-dot"></span>Sepia</button>
+    <button class="theme-swatch" data-theme="rose" style="--swatch:#a24a68" title="Rose"><span class="swatch-dot"></span>Rose</button>
+    <button class="theme-swatch" data-theme="ocean" style="--swatch:#1f7a8c" title="Ocean"><span class="swatch-dot"></span>Ocean</button>
+    <button class="theme-swatch" data-theme="midnight" style="--swatch:#6fa8dc" title="Midnight"><span class="swatch-dot"></span>Midnight</button>
+    <label class="theme-swatch theme-swatch-custom" id="custom-theme-swatch" for="custom-theme-picker" title="Custom — pick your own palette">
+      <span class="swatch-dot custom-swatch-dot" id="custom-swatch-dot"></span>
+      Custom
+      <input type="color" id="custom-theme-picker" value="#8a5fd6">
+    </label>
+  </div>
+  <div class="options-group-label">Favorite accent</div>
+  <div class="accent-picker-row">
+    <label class="accent-color-swatch" for="accent-color-picker" title="Choose a favorite accent color">
+      <input type="color" id="accent-color-picker" value="#5f7355">
+    </label>
+    <span class="accent-picker-label">Pick your favorite</span>
+    <button id="accent-reset-btn" class="accent-reset-btn" title="Reset to palette accent">Reset</button>
+  </div>
+  <div class="options-group-label">Page texture</div>
+  <div class="texture-swatch-grid">
+    <button class="texture-swatch" data-texture="none" title="Smooth — no texture"><span class="texture-preview texture-preview-none"></span>Smooth</button>
+    <button class="texture-swatch" data-texture="paper" title="Aged paper — grain, foxing and a warm vignette"><span class="texture-preview texture-preview-paper"></span>Aged paper</button>
+    <button class="texture-swatch" data-texture="linen" title="Linen — a subtle woven texture"><span class="texture-preview texture-preview-linen"></span>Linen</button>
+  </div>
+</div>
+
 <!-- Projects Shelf -->
 <div id="projects-overlay">
   <div class="projects-header">
     <span class="projects-title">Folio</span>
-    <span id="projects-summary"></span>
-    <button id="book-formatter-btn">Book formatter</button>
-    <button id="new-project-btn">New project</button>
+    <div class="projects-header-actions">
+      <span id="projects-summary"></span>
+      <button id="book-formatter-btn">Book formatter</button>
+      <button id="new-project-btn">New project</button>
+    </div>
   </div>
   <div id="projects-grid"></div>
 </div>

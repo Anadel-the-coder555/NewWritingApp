@@ -89,7 +89,144 @@ function loadPersistedState() {
 /* ────────────────────────────────────────
    Init
 ──────────────────────────────────────── */
+/* Appearance / theme settings */
+const THEME_KEY = 'folio-theme-mode';
+const ACCENT_KEY = 'folio-accent-color';
+const PALETTE_COLOR_KEY = 'folio-palette-color';
+const MODE_KEY = 'folio-color-mode';
+const TEXTURE_KEY = 'folio-page-texture';
+const PALETTE_ACCENTS = { sage: '#5f7355', slate: '#4a6fa5', sepia: '#a1662f', rose: '#a24a68', ocean: '#1f7a8c', midnight: '#6fa8dc' };
+let currentPalette = 'sage';
+let colorMode = 'light';
+
+function updateActiveSwatch(themeId) {
+  document.querySelectorAll('.theme-swatch[data-theme]').forEach(btn => btn.classList.toggle('active', btn.dataset.theme === themeId));
+  const customSwatch = document.getElementById('custom-theme-swatch');
+  if (customSwatch) customSwatch.classList.toggle('active', themeId === 'custom');
+}
+
+function applyTexture(id, persist = true) {
+  const texture = id && id !== 'none' ? id : '';
+  if (texture) document.documentElement.setAttribute('data-texture', texture);
+  else document.documentElement.removeAttribute('data-texture');
+  if (persist) localStorage.setItem(TEXTURE_KEY, texture || 'none');
+  document.querySelectorAll('.texture-swatch[data-texture]').forEach(btn => btn.classList.toggle('active', btn.dataset.texture === (texture || 'none')));
+}
+
+/* Generates a full coordinated scheme (bg/surface/text/chrome/borders/…) from one seed hue,
+   in either a light (paper) or dark (ink) register. */
+function generateScheme(hex, dark) {
+  const root = document.documentElement.style;
+  const mix = (pct, base) => `color-mix(in srgb, ${hex} ${pct}%, ${base})`;
+  if (!dark) {
+    root.setProperty('--color-bg', mix(12, 'white'));
+    root.setProperty('--color-surface', mix(5, 'white'));
+    root.setProperty('--surface', mix(5, 'white'));
+    root.setProperty('--color-text', mix(24, 'black'));
+    root.setProperty('--chrome', mix(18, 'white'));
+    root.setProperty('--toolbar', mix(8, 'white'));
+    root.setProperty('--surface2', mix(24, 'white'));
+    root.setProperty('--border', mix(32, 'white'));
+    root.setProperty('--border-light', mix(20, 'white'));
+    root.setProperty('--annotation', mix(55, 'white'));
+    root.setProperty('--current-line', mix(32, 'white'));
+  } else {
+    root.setProperty('--color-bg', mix(14, '#1b1f24'));
+    root.setProperty('--color-surface', mix(18, '#242a31'));
+    root.setProperty('--surface', mix(18, '#242a31'));
+    root.setProperty('--color-text', mix(18, 'white'));
+    root.setProperty('--chrome', mix(12, '#20262d'));
+    root.setProperty('--toolbar', mix(18, '#242a31'));
+    root.setProperty('--surface2', mix(28, '#2a313a'));
+    root.setProperty('--border', mix(22, '#333b44'));
+    root.setProperty('--border-light', mix(28, '#3a424d'));
+    root.setProperty('--annotation', mix(70, 'black'));
+    root.setProperty('--current-line', mix(55, 'black'));
+  }
+  root.setProperty('--color-neutral-600', 'color-mix(in srgb, var(--color-text) 46%, var(--color-bg))');
+  root.setProperty('--color-neutral-700', 'color-mix(in srgb, var(--color-text) 62%, var(--color-bg))');
+  root.setProperty('--color-neutral-900', 'color-mix(in srgb, var(--color-text) 92%, var(--color-bg))');
+}
+
+function applyAccentColor(hex, persist = true, dark = colorMode === 'dark') {
+  const root = document.documentElement.style;
+  if (!hex) {
+    ['--color-accent', '--color-accent-100', '--color-accent-200', '--color-accent-400', '--color-accent-600', '--color-accent-700', '--color-accent-800'].forEach(p => root.removeProperty(p));
+    if (persist) localStorage.removeItem(ACCENT_KEY);
+  } else {
+    const toward = (c, pct) => `color-mix(in srgb, ${hex} ${pct}%, ${c})`;
+    root.setProperty('--color-accent', hex);
+    root.setProperty('--color-accent-100', dark ? toward('black', 30) : toward('white', 22));
+    root.setProperty('--color-accent-200', dark ? toward('black', 45) : toward('white', 38));
+    root.setProperty('--color-accent-400', dark ? toward('black', 65) : toward('white', 70));
+    root.setProperty('--color-accent-600', hex);
+    root.setProperty('--color-accent-700', dark ? toward('white', 65) : toward('black', 78));
+    root.setProperty('--color-accent-800', dark ? toward('white', 80) : toward('black', 62));
+    if (persist) localStorage.setItem(ACCENT_KEY, hex);
+  }
+  const shown = hex || PALETTE_ACCENTS[currentPalette] || PALETTE_ACCENTS.sage;
+  const swatch = document.querySelector('.accent-color-swatch');
+  const picker = document.getElementById('accent-color-picker');
+  if (swatch) swatch.style.background = shown;
+  if (picker) picker.value = shown;
+}
+
+/* Re-renders whatever palette is currently selected using the current light/dark mode. */
+function refreshPalette() {
+  const hex = currentPalette === 'custom' ? (localStorage.getItem(PALETTE_COLOR_KEY) || '#8a5fd6') : (PALETTE_ACCENTS[currentPalette] || PALETTE_ACCENTS.sage);
+  generateScheme(hex, colorMode === 'dark');
+  document.documentElement.setAttribute('data-theme', currentPalette);
+  updateActiveSwatch(currentPalette);
+  applyAccentColor(localStorage.getItem(ACCENT_KEY), false);
+}
+
+function applyTheme(id) {
+  currentPalette = (id && PALETTE_ACCENTS[id]) ? id : 'sage';
+  localStorage.setItem(THEME_KEY, currentPalette);
+  refreshPalette();
+}
+
+function applyCustomPalette(hex, persist = true) {
+  currentPalette = 'custom';
+  if (persist) { localStorage.setItem(THEME_KEY, 'custom'); localStorage.setItem(PALETTE_COLOR_KEY, hex); }
+  const dot = document.getElementById('custom-swatch-dot');
+  const picker = document.getElementById('custom-theme-picker');
+  if (dot) dot.style.background = hex;
+  if (picker) picker.value = hex;
+  refreshPalette();
+}
+
+function setColorMode(mode, persist = true) {
+  colorMode = mode === 'dark' ? 'dark' : 'light';
+  if (persist) localStorage.setItem(MODE_KEY, colorMode);
+  document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === colorMode));
+  refreshPalette();
+}
+
+function initTheme() {
+  colorMode = localStorage.getItem(MODE_KEY) === 'dark' ? 'dark' : 'light';
+  document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === colorMode));
+  const savedPaletteColor = localStorage.getItem(PALETTE_COLOR_KEY) || '';
+  if (savedPaletteColor) {
+    const dot = document.getElementById('custom-swatch-dot');
+    const picker = document.getElementById('custom-theme-picker');
+    if (dot) dot.style.background = savedPaletteColor;
+    if (picker) picker.value = savedPaletteColor;
+  }
+  const savedTheme = localStorage.getItem(THEME_KEY) || 'sage';
+  if (savedTheme === 'custom' && savedPaletteColor) applyCustomPalette(savedPaletteColor, false);
+  else applyTheme(savedTheme);
+  applyTexture(localStorage.getItem(TEXTURE_KEY) || 'none', false);
+}
+
+function toggleSettingsMenu(force) {
+  const menu = document.getElementById('settings-menu');
+  const open = typeof force === 'boolean' ? force : !menu.classList.contains('open');
+  menu.classList.toggle('open', open);
+}
+
 function init() {
+  initTheme();
   loadPersistedState();
   renderTree();
   loadDoc(activeId);
@@ -254,9 +391,35 @@ function saveCurrentDoc() {
 /* ────────────────────────────────────────
    Statistics
 ──────────────────────────────────────── */
+/* Strips HTML down to plain text for character/sentence counting. Decodes the one
+   entity that matters here: a non-breaking space serializes back out of innerHTML as
+   the literal text "&nbsp;" (not the actual space character), which would otherwise
+   glue two words together — and its own letters ("nbsp") would wrongly read as a word. */
+function htmlToCountableText(html) {
+  return (html || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&#160;/g, ' ')
+    .replace(/&#xa0;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/* Finds actual word tokens: runs of letters/digits, with an internal apostrophe
+   allowed so contractions and possessives ("don't", "Ellis's") count as one word.
+   Deliberately does NOT split on whitespace — instead it defines what a word IS and
+   treats literally everything else (spaces, em/en dashes, stray quotes and commas,
+   zero-width joiners, scene-break dots, …) as a separator. That makes it immune to
+   the whole class of "some odd character glues two words together" or "a stray
+   punctuation mark gets counted as its own word" bugs, rather than requiring each
+   troublesome character to be special-cased as it's discovered. */
+function wordTokens(html) {
+  const text = htmlToCountableText(html);
+  return text.match(/[\p{L}\p{N}]+(?:['’\u00AD-][\p{L}\p{N}]+)*/gu) || [];
+}
+
 function countWords(html) {
-  const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  return text ? text.split(' ').filter(w => w.length > 0).length : 0;
+  return wordTokens(html).length;
 }
 
 /* ── World Bible ── */
@@ -289,8 +452,8 @@ function renderMentions(entities) {
 
 function updateStats() {
   const html    = document.getElementById('editor').innerHTML;
-  const text    = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  const words   = text ? text.split(' ').filter(w => w.length > 0).length : 0;
+  const text    = htmlToCountableText(html);
+  const words   = wordTokens(html).length;
   const chars   = text.replace(/\s/g, '').length;
   const paras   = (html.match(/<p[^>]*>/gi) || []).length || (text ? 1 : 0);
   const sentences = text ? (text.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || []).length : 0;
@@ -347,6 +510,36 @@ function getSessionBase() {
 function fmt(cmd) {
   document.execCommand(cmd, false, null);
   document.getElementById('editor').focus();
+}
+
+/* Applies a font only to the current selection (e.g. a letter written in another
+   character's hand within a chapter). Returns false if there's nothing selected,
+   so the caller can fall back to changing the whole document's font. */
+function applySelectionFont(fontValue) {
+  const editor = document.getElementById('editor');
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !editor.contains(selection.anchorNode)) return false;
+  const range = selection.getRangeAt(0).cloneRange();
+  let fragment;
+  try { fragment = range.extractContents(); }
+  catch { alert('Select text within a single paragraph to change its font.'); return true; }
+  // Drop any font already set on the selection (e.g. it spanned two differently-styled
+  // runs) so the newly chosen font wins uniformly across the whole selection.
+  fragment.querySelectorAll('[style]').forEach(el => {
+    el.style.removeProperty('font-family');
+    if (!el.getAttribute('style')) el.removeAttribute('style');
+  });
+  fragment.querySelectorAll('span:not([style]):not([class])').forEach(el => el.replaceWith(...el.childNodes));
+  const span = document.createElement('span');
+  span.style.fontFamily = fontValue;
+  span.appendChild(fragment);
+  range.insertNode(span);
+  const caret = document.createRange();
+  caret.selectNodeContents(span);
+  selection.removeAllRanges();
+  selection.addRange(caret);
+  saveCurrentDoc();
+  return true;
 }
 
 function applyBlock(tag) {
@@ -2117,13 +2310,16 @@ function setupEventListeners() {
     applyBlock(this.value);
   });
 
-  /* Font select */
+  /* Font select — applies to the selection if there is one, otherwise sets the document's font */
   document.getElementById('fmt-font').addEventListener('change', function() {
     const d = docs.find(x => x.id === activeId);
     if (!d) return;
-    d.font = this.value;
-    document.getElementById('editor').style.fontFamily = this.value;
-    schedulePersist();
+    if (!applySelectionFont(this.value)) {
+      d.font = this.value;
+      document.getElementById('editor').style.fontFamily = this.value;
+      schedulePersist();
+    }
+    document.getElementById('editor').focus();
   });
 
   /* Editor input */
@@ -2263,6 +2459,14 @@ function setupEventListeners() {
     actions[btn.dataset.option](); toggleOptionsMenu(false);
   }));
   document.addEventListener('click', e => { if (!e.target.closest('#options-menu') && !e.target.closest('#btn-menu')) toggleOptionsMenu(false); });
+  document.getElementById('btn-settings').addEventListener('click', e => { e.stopPropagation(); toggleSettingsMenu(); });
+  document.querySelectorAll('.mode-btn').forEach(btn => btn.addEventListener('click', () => setColorMode(btn.dataset.mode)));
+  document.querySelectorAll('.theme-swatch[data-theme]').forEach(btn => btn.addEventListener('click', () => applyTheme(btn.dataset.theme)));
+  document.getElementById('custom-theme-picker').addEventListener('input', e => applyCustomPalette(e.target.value));
+  document.getElementById('accent-color-picker').addEventListener('input', e => applyAccentColor(e.target.value));
+  document.getElementById('accent-reset-btn').addEventListener('click', () => applyAccentColor(null));
+  document.querySelectorAll('.texture-swatch[data-texture]').forEach(btn => btn.addEventListener('click', () => applyTexture(btn.dataset.texture)));
+  document.addEventListener('click', e => { if (!e.target.closest('#settings-menu') && !e.target.closest('#btn-settings')) toggleSettingsMenu(false); });
   document.addEventListener('click', e => {
     if (!e.target.closest('.project-more') && !e.target.closest('.project-card-menu')) {
       document.querySelectorAll('.project-card-menu.open').forEach(menu => menu.classList.remove('open'));
@@ -2407,11 +2611,8 @@ function setupEventListeners() {
   const text = e.clipboardData.getData('text/plain');
   const el = document.getElementById('book-editor');
   const paras = text.split('\n').filter(p => p.trim().length > 0);
-  paras.forEach(p => {
-    const para = document.createElement('p');
-    para.textContent = p;
-    el.appendChild(para);
-  });
+  if (paras.length === 0) return;
+  bookInsertParagraphsAtCursor(el, paras);
   setTimeout(() => bookReSplitCurrentPage('right'), 100);
 });
 
@@ -2420,11 +2621,8 @@ document.getElementById('book-left-content').addEventListener('paste', e => {
   const text = e.clipboardData.getData('text/plain');
   const el = document.getElementById('book-left-content');
   const paras = text.split('\n').filter(p => p.trim().length > 0);
-  paras.forEach(p => {
-    const para = document.createElement('p');
-    para.textContent = p;
-    el.appendChild(para);
-  });
+  if (paras.length === 0) return;
+  bookInsertParagraphsAtCursor(el, paras);
   setTimeout(() => bookReSplitCurrentPage('left'), 100);
 });
 }
@@ -2433,37 +2631,116 @@ document.getElementById('book-left-content').addEventListener('paste', e => {
 ──────────────────────────────────────── */
 const BOOK_CHAPTER_LABEL = () => document.getElementById('doc-title-edit').value || 'Untitled';
 const CHARS_PER_PAGE = 2800; // Adjust as needed for page length
+const BOOK_SCENE_BREAK = ' scene-break ';
+
+/* Splits manuscript HTML into paragraph strings, one per top-level block, keeping
+   each paragraph's inline formatting (font spans, bold, italic, …) intact so Book
+   Mode looks the same as the editor instead of flattening everything to plain text. */
+function htmlToBookParagraphs(html) {
+  const container = document.createElement('div');
+  container.innerHTML = html || '';
+  const paras = [];
+  container.childNodes.forEach(node => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const t = node.textContent.trim();
+      if (t) paras.push(escapeHTML(t));
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    if (node.classList && node.classList.contains('scene-break')) { paras.push(BOOK_SCENE_BREAK); return; }
+    const inner = node.innerHTML.trim();
+    if (inner && node.textContent.trim()) paras.push(inner);
+  });
+  return paras;
+}
+
+/* Reads a book page's current DOM back into paragraph strings. Works whether the
+   browser wrapped each line in <p> or <div> (contentEditable's native Enter-key
+   behavior varies by browser), so nothing typed or pasted is ever silently dropped. */
+function bookSerializePage(el) {
+  const paras = [];
+  el.childNodes.forEach(node => {
+    if (node.nodeType === Node.ELEMENT_NODE && (node.tagName === 'P' || node.tagName === 'DIV')) {
+      if (node.classList && node.classList.contains('book-scene-break')) { paras.push(BOOK_SCENE_BREAK); return; }
+      const inner = node.innerHTML.trim();
+      if (inner && node.textContent.trim()) paras.push(inner);
+    } else if (node.nodeType === Node.TEXT_NODE) {
+      const t = node.textContent.trim();
+      if (t) paras.push(escapeHTML(t));
+    }
+  });
+  if (paras.length === 0) {
+    return el.innerText.split('\n').map(s => s.trim()).filter(Boolean).map(escapeHTML);
+  }
+  return paras;
+}
+
+/* Visible character count of a paragraph, ignoring markup — used to keep pagination
+   based on actual prose length instead of counting style-attribute characters. */
+function bookVisibleLength(para) {
+  return para === BOOK_SCENE_BREAK ? 5 : para.replace(/<[^>]+>/g, '').length;
+}
+
+function bookParagraphHTML(para, indent) {
+  if (para === BOOK_SCENE_BREAK) return `<div class="book-scene-break" style="margin:20px 0;text-align:center;letter-spacing:0.4em;color:var(--text-faint);">· · ·</div>`;
+  return `<p style="text-indent:${indent ? '1.8em' : '0'};margin-bottom:0;">${para}</p>`;
+}
+
+/* Inserts pasted paragraphs at the caret (replacing any selection) instead of always
+   dumping them at the end of the page, so paste never lands somewhere the user didn't
+   click, and never leaves existing text stranded. */
+function bookInsertParagraphsAtCursor(el, paras) {
+  const selection = window.getSelection();
+  let range;
+  if (selection && selection.rangeCount > 0 && el.contains(selection.anchorNode) && el.contains(selection.focusNode)) {
+    range = selection.getRangeAt(0);
+  } else {
+    range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+  }
+  range.deleteContents();
+  const frag = document.createDocumentFragment();
+  let lastNode = null;
+  paras.forEach(p => {
+    const para = document.createElement('p');
+    para.textContent = p;
+    frag.appendChild(para);
+    lastNode = para;
+  });
+  range.insertNode(frag);
+  if (lastNode && selection) {
+    const caret = document.createRange();
+    caret.setStartAfter(lastNode);
+    caret.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(caret);
+  }
+}
 
 let bookPages    = [];
 let bookSpread   = 0;
 let bookFlipping = false;
 
 function openBookMode() {
+  saveCurrentDoc(); // flush any edit still sitting in the debounced autosave before reading d.content
   const d = docs.find(x => x.id === activeId);
   if (!d) return;
 
-  const plain = d.content
-  .replace(/<p[^>]*>/gi, '\n')
-  .replace(/<\/p>/gi, '')
-  .replace(/<br\s*\/?>/gi, '\n')
-  .replace(/<[^>]+>/g, '')
-  .replace(/&nbsp;/gi, ' ')
-  .replace(/\n{3,}/g, '\n\n')
-  .trim();
-
+  const paras = htmlToBookParagraphs(d.content || '');
   bookPages = [];
-  const paras = plain.split('\n').filter(p => p.trim().length > 0);
   let currentPage = [];
   let currentLen  = 0;
 
   paras.forEach(para => {
-    if (currentLen + para.length > CHARS_PER_PAGE && currentPage.length > 0) {
+    const len = bookVisibleLength(para);
+    if (currentLen + len > CHARS_PER_PAGE && currentPage.length > 0) {
       bookPages.push(currentPage);
       currentPage = [];
       currentLen  = 0;
     }
     currentPage.push(para);
-    currentLen += para.length;
+    currentLen += len;
   });
 
   if (currentPage.length > 0) bookPages.push(currentPage);
@@ -2481,7 +2758,7 @@ function closeBookMode() {
   if (bookSpread >= 0) bookSaveBothPages();
 
   const allParas = bookPages.flat();
-  const html = allParas.map(p => `<p>${p}</p>`).join('');
+  const html = allParas.map(p => p === BOOK_SCENE_BREAK ? '<div class="scene-break">· · ·</div>' : `<p>${p}</p>`).join('');
 
   const d = docs.find(x => x.id === activeId);
   if (d) {
@@ -2543,7 +2820,7 @@ function bookRenderSpread() {
   leftEl.style.cursor    = 'text';
   leftEl.style.outline   = 'none';
   leftEl.innerHTML = leftPage.length > 0
-    ? leftPage.map((p, i) => `<p style="text-indent:${i === 0 ? '0' : '1.8em'};margin-bottom:0;">${p}</p>`).join('')
+    ? leftPage.map((p, i) => bookParagraphHTML(p, i !== 0)).join('')
     : '';
 
   // Right page — fully editable
@@ -2552,7 +2829,7 @@ function bookRenderSpread() {
   rightEl.contentEditable = 'true';
   rightEl.style.cursor    = 'text';
   rightEl.innerHTML = rightPage.length > 0
-    ? rightPage.map((p, i) => `<p style="text-indent:${i === 0 ? '0' : '1.8em'};margin-bottom:0;">${p}</p>`).join('')
+    ? rightPage.map((p, i) => bookParagraphHTML(p, i !== 0)).join('')
     : '';
 
   rightEl.focus();
@@ -2567,62 +2844,45 @@ function bookSaveBothPages() {
 
   while (bookPages.length <= rightIdx) bookPages.push([]);
 
-  // Save left page
-  const leftEl = document.getElementById('book-left-content');
-  const leftParas = Array.from(leftEl.querySelectorAll('p'))
-    .map(p => p.textContent.trim())
-    .filter(p => p.length > 0);
-  bookPages[leftIdx] = leftParas.length > 0
-    ? leftParas
-    : leftEl.innerText.split('\n').filter(l => l.trim().length > 0);
-
-  // Save right page
-  const rightEl = document.getElementById('book-editor');
-  const rightParas = Array.from(rightEl.querySelectorAll('p'))
-    .map(p => p.textContent.trim())
-    .filter(p => p.length > 0);
-  bookPages[rightIdx] = rightParas.length > 0
-    ? rightParas
-    : rightEl.innerText.split('\n').filter(l => l.trim().length > 0);
+  bookPages[leftIdx]  = bookSerializePage(document.getElementById('book-left-content'));
+  bookPages[rightIdx] = bookSerializePage(document.getElementById('book-editor'));
 }
 
 function bookUpdateWC() {
-  const allText = bookPages.flat().join(' ');
-  const words   = allText.trim().split(/\s+/).filter(w => w.length > 0).length;
+  const words = wordTokens(bookPages.flat().join(' ')).length;
   document.getElementById('book-wc').textContent = words.toLocaleString() + ' words';
 }
 
 function bookReSplitCurrentPage(side) {
   bookSaveBothPages();
 
-  // Grab all content from current page onward
+  // Grab all paragraphs from the current page onward
   const leftIdx  = bookSpread * 2;
   const rightIdx = bookSpread * 2 + 1;
   const idx      = side === 'left' ? leftIdx : rightIdx;
 
-  // Pull all text from the pasted page to the end
-  const remainingPages = bookPages.slice(idx);
-  const allText = remainingPages.flat().join('\n');
+  const paras = bookPages.slice(idx).flat();
+  const totalLen = paras.reduce((sum, p) => sum + bookVisibleLength(p), 0);
 
-  if (allText.length <= CHARS_PER_PAGE) {
+  if (totalLen <= CHARS_PER_PAGE) {
     bookRenderSpread();
     return;
   }
 
-  // Resplit all that text into pages
-  const paras = allText.split('\n').filter(p => p.trim().length > 0);
+  // Resplit those paragraphs into pages
   const newPages = [];
   let currentPage = [];
   let currentLen  = 0;
 
   paras.forEach(para => {
-    if (currentLen + para.length > CHARS_PER_PAGE && currentPage.length > 0) {
+    const len = bookVisibleLength(para);
+    if (currentLen + len > CHARS_PER_PAGE && currentPage.length > 0) {
       newPages.push(currentPage);
       currentPage = [];
       currentLen  = 0;
     }
     currentPage.push(para);
-    currentLen += para.length;
+    currentLen += len;
   });
 
   if (currentPage.length > 0) newPages.push(currentPage);
