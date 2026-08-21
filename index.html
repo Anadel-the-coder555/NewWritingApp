@@ -465,6 +465,13 @@
       <input type="file" id="import-project-input" accept=".folio,application/json" style="display:none">
       <button id="new-project-btn">New project</button>
     </div>
+    <div class="projects-sync-row">
+      <span id="sync-status-text">Synced folder: not connected</span>
+      <button id="sync-choose-btn" type="button">Choose synced folder…</button>
+      <button id="sync-reconnect-btn" type="button" hidden>Reconnect</button>
+      <button id="sync-disconnect-btn" type="button" hidden>Disconnect</button>
+    </div>
+    <div id="sync-conflicts" hidden></div>
   </div>
   <div id="projects-grid"></div>
 </div>

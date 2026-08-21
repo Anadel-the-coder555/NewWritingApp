@@ -228,6 +228,7 @@ function toggleSettingsMenu(force) {
 function init() {
   initTheme();
   loadPersistedState();
+  ensureUniqueProjectId(); // migrate off the generic 'default' id every install starts with, before anything can compare ids against another device's file
   renderTree();
   loadDoc(activeId);
   updateTotals();
@@ -250,6 +251,8 @@ function init() {
     saveCharacterView();
     persistState();
   });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) scanSyncFolder(); });
+  loadSyncFolderHandle();
   openProjects();
 }
 
@@ -2148,26 +2151,34 @@ function projectArchive() {
 }
 
 const coverDatabase = new Promise((resolve, reject) => {
-  const request = indexedDB.open('folio-media', 1);
-  request.onupgradeneeded = () => request.result.createObjectStore('project-covers');
+  const request = indexedDB.open('folio-media', 2);
+  request.onupgradeneeded = () => {
+    const db = request.result;
+    if (!db.objectStoreNames.contains('project-covers')) db.createObjectStore('project-covers');
+    if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles'); // holds the synced-folder FileSystemDirectoryHandle
+  };
   request.onsuccess = () => resolve(request.result);
   request.onerror = () => reject(request.error);
 });
 
-async function coverStore(mode, operation) {
+async function mediaStore(storeName, mode, operation) {
   const database = await coverDatabase;
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction('project-covers', mode);
-    const store = transaction.objectStore('project-covers');
+    const transaction = database.transaction(storeName, mode);
+    const store = transaction.objectStore(storeName);
     const request = operation(store);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 }
 
-const getStoredCover = id => coverStore('readonly', store => store.get(id));
-const setStoredCover = (id, value) => coverStore('readwrite', store => store.put(value, id));
-const deleteStoredCover = id => coverStore('readwrite', store => store.delete(id));
+const getStoredCover = id => mediaStore('project-covers', 'readonly', store => store.get(id));
+const setStoredCover = (id, value) => mediaStore('project-covers', 'readwrite', store => store.put(value, id));
+const deleteStoredCover = id => mediaStore('project-covers', 'readwrite', store => store.delete(id));
+
+const getSyncFolderHandle = () => mediaStore('handles', 'readonly', store => store.get('sync-folder'));
+const setSyncFolderHandle = handle => mediaStore('handles', 'readwrite', store => store.put(handle, 'sync-folder'));
+const clearSyncFolderHandle = () => mediaStore('handles', 'readwrite', store => store.delete('sync-folder'));
 
 function writeProjectArchive(projects) {
   try {
@@ -2229,6 +2240,7 @@ function saveProjectToArchive() {
   const index = archive.findIndex(p => p.id === state.id);
   if (index >= 0) archive[index] = state; else archive.push(state);
   writeProjectArchive(archive);
+  if (syncFolderHandle) writeProjectToSyncFolder(state); // fire-and-forget; failures are logged, never block the save
 }
 
 function formatterSettings() {
@@ -2559,7 +2571,7 @@ async function exportFormattedBook() {
   }
 }
 
-function openProjects() { saveProjectToArchive(); renderProjects(); document.getElementById('projects-overlay').classList.add('open'); }
+function openProjects() { saveProjectToArchive(); renderProjects(); document.getElementById('projects-overlay').classList.add('open'); scanSyncFolder(); }
 
 function renderProjects() {
   const archive = projectArchive().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
@@ -2755,18 +2767,17 @@ function createProject() {
 ──────────────────────────────────────── */
 const FOLIO_FILE_VERSION = 1;
 
-async function exportProjectFile(id) {
-  if (id === currentProjectId) saveProjectToArchive();
-  const project = projectArchive().find(p => p.id === id);
-  if (!project) { alert('That project could not be found.'); return; }
+async function buildProjectFilePayload(id, projectOverride) {
+  const project = projectOverride || projectArchive().find(p => p.id === id);
+  if (!project) return null;
 
   let cover = null;
-  try { cover = await getStoredCover(id); } catch (e) { /* no cover saved */ }
+  try { cover = await getStoredCover(project.id); } catch (e) { /* no cover saved */ }
 
   let formatterSettings = null;
-  try { formatterSettings = JSON.parse(localStorage.getItem(`folio-formatter:${id}`) || 'null'); } catch (e) { formatterSettings = null; }
+  try { formatterSettings = JSON.parse(localStorage.getItem(`folio-formatter:${project.id}`) || 'null'); } catch (e) { formatterSettings = null; }
 
-  const payload = {
+  return {
     folioFile: true,
     version: FOLIO_FILE_VERSION,
     exportedAt: new Date().toISOString(),
@@ -2774,12 +2785,21 @@ async function exportProjectFile(id) {
     cover,
     formatterSettings
   };
+}
+
+function safeFileSlug(title) {
+  return (title || 'project').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'project';
+}
+
+async function exportProjectFile(id) {
+  if (id === currentProjectId) saveProjectToArchive();
+  const payload = await buildProjectFilePayload(id);
+  if (!payload) { alert('That project could not be found.'); return; }
 
   const blob = new Blob([JSON.stringify(payload)], { type: 'application/json;charset=utf-8' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  const safeName = (project.title || 'project').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'project';
-  link.download = `${safeName}.folio`;
+  link.download = `${safeFileSlug(payload.project.title)}.folio`;
   link.click();
   URL.revokeObjectURL(link.href);
 }
@@ -2802,40 +2822,290 @@ async function importProjectFile(file) {
     alert('That file could not be read. Choose a .folio project file exported from Folio.');
     return;
   }
-  if (!data || !data.folioFile || !data.project || !Array.isArray(data.project.docs)) {
+  if (!data || !data.folioFile || !data.project || !Array.isArray(data.project.docs) || !data.project.id) {
     alert('That file is not a valid Folio project file.');
     return;
   }
 
   saveProjectToArchive(); // flush the currently open project before switching away from it
 
+  // A file re-exported from a project already on this device (from an earlier import,
+  // or from the synced folder) carries that same project's id — matching on it here,
+  // instead of always minting a new id, is what lets re-importing update the existing
+  // project in place rather than piling up duplicate copies every time.
   const archive = projectArchive();
-  let title = data.project.title || 'Imported Project';
-  if (archive.some(p => p.title === title)) title = `${title} (imported)`;
+  const existing = archive.find(p => p.id === data.project.id);
+  const wasCurrent = data.project.id === currentProjectId;
 
-  const newId = `project-${Date.now()}`;
+  if (existing && !confirm(`"${existing.title}" already exists on this device (from an earlier import or sync).\n\nReplace it with this file's version? This can't be undone.`)) return;
+
   const importedDocs = data.project.docs.map(d => ({ ...d }));
-  const newProject = {
-    id: newId,
-    title,
-    docs: importedDocs,
-    nextId: typeof data.project.nextId === 'number' ? data.project.nextId : Math.max(0, ...importedDocs.map(d => d.id)) + 1,
-    activeId: importedDocs.some(d => d.id === data.project.activeId) ? data.project.activeId : (importedDocs[0] ? importedDocs[0].id : 1),
-    updatedAt: new Date().toISOString()
+  let title = data.project.title || 'Imported Project';
+  if (!existing && archive.some(p => p.title === title)) title = `${title} (imported)`;
+
+  const normalized = {
+    ...data,
+    project: {
+      id: data.project.id,
+      title,
+      docs: importedDocs,
+      nextId: typeof data.project.nextId === 'number' ? data.project.nextId : Math.max(0, ...importedDocs.map(d => d.id)) + 1,
+      activeId: importedDocs.some(d => d.id === data.project.activeId) ? data.project.activeId : (importedDocs[0] ? importedDocs[0].id : 1),
+      updatedAt: new Date().toISOString()
+    }
   };
 
-  archive.push(newProject);
-  if (!writeProjectArchive(archive)) return;
+  const entry = await upsertSyncedProject(normalized);
 
-  if (data.cover) {
-    try { await setStoredCover(newId, data.cover); } catch (e) { console.error('Could not save imported cover', e); }
+  if (wasCurrent) {
+    // switchProject() always flushes the in-memory doc to the archive first, which
+    // would clobber the version we just imported — so when re-importing an update to
+    // the project you're already editing, load it in place instead.
+    docs = entry.docs.map(d => ({ ...d, createdAt: d.createdAt ? new Date(d.createdAt) : new Date() }));
+    nextId = entry.nextId;
+    activeId = docs.some(d => d.id === entry.activeId) ? entry.activeId : (docs[0] ? docs[0].id : 1);
+    document.getElementById('project-title-input').value = entry.title;
+    document.getElementById('projects-overlay').classList.remove('open');
+    sessionBaseWords = getSessionBase();
+    renderTree(); loadDoc(activeId); persistState();
+  } else {
+    switchProject(entry.id);
   }
-  if (data.formatterSettings) {
-    try { localStorage.setItem(`folio-formatter:${newId}`, JSON.stringify(data.formatterSettings)); } catch (e) { /* ignore */ }
-  }
-
-  switchProject(newId);
   renderProjects();
+}
+
+/* ────────────────────────────────────────
+   Synced Folder
+   An alternative to manual Export/Import: point Folio at a folder your OS already
+   syncs (Dropbox, iCloud Drive, …) via the File System Access API, and every save
+   writes a .folio file there automatically — so the *transfer* between devices
+   happens for free, and only loading it back in on the other device stays manual.
+   Desktop Chrome/Edge only; the API doesn't exist in Safari or on iOS, so this is
+   silently unavailable there and Export/Import remains the cross-platform path.
+──────────────────────────────────────── */
+let syncFolderHandle = null;
+
+function syncFolderSupported() { return 'showDirectoryPicker' in window; }
+
+async function ensureSyncFolderPermission(handle, requestIfNeeded) {
+  if (!handle) return false;
+  const opts = { mode: 'readwrite' };
+  try {
+    if ((await handle.queryPermission(opts)) === 'granted') return true;
+    if (!requestIfNeeded) return false;
+    return (await handle.requestPermission(opts)) === 'granted';
+  } catch (e) {
+    return false;
+  }
+}
+
+function syncFilenameMap() {
+  try { return JSON.parse(localStorage.getItem('folio-sync-filenames') || '{}'); } catch (e) { return {}; }
+}
+function setSyncFilenameMap(map) {
+  try { localStorage.setItem('folio-sync-filenames', JSON.stringify(map)); } catch (e) { /* ignore */ }
+}
+
+async function writeProjectToSyncFolder(project) {
+  if (!syncFolderHandle) return;
+  if (!(await ensureSyncFolderPermission(syncFolderHandle, false))) return; // never prompt during a background autosave
+  try {
+    const map = syncFilenameMap();
+    const newName = `${safeFileSlug(project.title)}.folio`;
+    const oldName = map[project.id];
+    if (oldName && oldName !== newName) {
+      try { await syncFolderHandle.removeEntry(oldName); } catch (e) { /* already gone */ }
+    }
+    const payload = await buildProjectFilePayload(project.id, project);
+    const fileHandle = await syncFolderHandle.getFileHandle(newName, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(JSON.stringify(payload));
+    await writable.close();
+    map[project.id] = newName;
+    setSyncFilenameMap(map);
+  } catch (e) {
+    console.error('Could not write to synced folder', e);
+  }
+}
+
+/* Writes or replaces one project's archive entry from data read out of the synced
+   folder, restoring its cover and formatter settings alongside it. Shared by both
+   the "never seen this project before" and "found a newer version" paths below. */
+async function upsertSyncedProject(data) {
+  const archive = projectArchive();
+  const index = archive.findIndex(p => p.id === data.project.id);
+  const entry = {
+    id: data.project.id,
+    title: data.project.title,
+    docs: data.project.docs,
+    nextId: data.project.nextId,
+    activeId: data.project.activeId,
+    updatedAt: data.project.updatedAt || new Date().toISOString()
+  };
+  if (index >= 0) archive[index] = entry; else archive.push(entry);
+  writeProjectArchive(archive);
+  if (data.cover) { try { await setStoredCover(entry.id, data.cover); } catch (e) { /* ignore */ } }
+  if (data.formatterSettings) { try { localStorage.setItem(`folio-formatter:${entry.id}`, JSON.stringify(data.formatterSettings)); } catch (e) { /* ignore */ } }
+  return entry;
+}
+
+async function applySyncedUpdate(data) {
+  const entry = await upsertSyncedProject(data);
+  if (entry.id === currentProjectId) {
+    docs = entry.docs.map(d => ({ ...d, createdAt: d.createdAt ? new Date(d.createdAt) : new Date() }));
+    nextId = entry.nextId;
+    activeId = docs.some(d => d.id === entry.activeId) ? entry.activeId : (docs[0] ? docs[0].id : 1);
+    document.getElementById('project-title-input').value = entry.title;
+    renderTree(); loadDoc(activeId); persistState();
+  }
+  renderProjects();
+  scanSyncFolder(); // clears the resolved conflict out of the list
+}
+
+function updateSyncFolderUI(reconnectNeeded) {
+  const text = document.getElementById('sync-status-text');
+  const chooseBtn = document.getElementById('sync-choose-btn');
+  const reconnectBtn = document.getElementById('sync-reconnect-btn');
+  const disconnectBtn = document.getElementById('sync-disconnect-btn');
+  if (!text) return;
+
+  if (!syncFolderSupported()) {
+    text.textContent = 'Folder sync needs Chrome or Edge on desktop — use Export/Import here instead.';
+    chooseBtn.hidden = true; reconnectBtn.hidden = true; disconnectBtn.hidden = true;
+    return;
+  }
+  if (!syncFolderHandle) {
+    text.textContent = 'Synced folder: not connected';
+    chooseBtn.hidden = false; reconnectBtn.hidden = true; disconnectBtn.hidden = true;
+    return;
+  }
+  text.textContent = reconnectNeeded
+    ? `Synced folder: ${syncFolderHandle.name} — access needs to be reconfirmed`
+    : `Synced folder: ${syncFolderHandle.name}`;
+  chooseBtn.hidden = true;
+  reconnectBtn.hidden = !reconnectNeeded;
+  disconnectBtn.hidden = false;
+}
+
+function renderSyncConflicts(conflicts) {
+  const el = document.getElementById('sync-conflicts');
+  if (!el) return;
+  if (!conflicts.length) { el.innerHTML = ''; el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = conflicts.map(({ local, data }) => `
+    <div class="sync-conflict" data-id="${escapeHTML(local.id)}">
+      <span>“${escapeHTML(local.title)}” has newer edits in the synced folder, from ${new Date(data.project.updatedAt).toLocaleString()}.</span>
+      <button type="button" data-sync-load="${escapeHTML(local.id)}">Load newer version</button>
+      <button type="button" data-sync-ignore="${escapeHTML(local.id)}">Ignore</button>
+    </div>`).join('');
+  el.querySelectorAll('[data-sync-load]').forEach(btn => btn.addEventListener('click', () => {
+    const conflict = conflicts.find(c => c.local.id === btn.dataset.syncLoad);
+    if (conflict) applySyncedUpdate(conflict.data);
+  }));
+  el.querySelectorAll('[data-sync-ignore]').forEach(btn => btn.addEventListener('click', () => {
+    btn.closest('.sync-conflict').remove();
+    if (!el.querySelector('.sync-conflict')) el.hidden = true;
+  }));
+}
+
+async function scanSyncFolder() {
+  if (!syncFolderHandle) return;
+  const granted = await ensureSyncFolderPermission(syncFolderHandle, false);
+  updateSyncFolderUI(!granted);
+  if (!granted) return;
+
+  const archive = projectArchive();
+  const conflicts = [];
+  let importedAny = false;
+
+  try {
+    for await (const entry of syncFolderHandle.values()) {
+      if (entry.kind !== 'file' || !entry.name.endsWith('.folio')) continue;
+      let data;
+      try { data = JSON.parse(await (await entry.getFile()).text()); } catch (e) { continue; }
+      if (!data || !data.folioFile || !data.project || !data.project.id) continue;
+
+      const local = archive.find(p => p.id === data.project.id);
+      if (!local) {
+        await upsertSyncedProject(data);
+        importedAny = true;
+        continue;
+      }
+      const remoteTime = new Date(data.project.updatedAt || 0).getTime();
+      const localTime  = new Date(local.updatedAt || 0).getTime();
+      if (remoteTime > localTime + 1000) conflicts.push({ local, data }); // meaningfully newer, not just clock jitter
+    }
+  } catch (e) {
+    console.error('Could not scan synced folder', e);
+  }
+
+  if (importedAny) renderProjects();
+  renderSyncConflicts(conflicts);
+}
+
+/* Every fresh install's very first project is bootstrapped with the literal id
+   'default' (see the top-level `let currentProjectId = 'default'`) — harmless on
+   a single device, but two devices each have their OWN unrelated 'default'
+   project, and both scanSyncFolder() and importProjectFile() now match projects
+   by id (so re-importing/re-syncing updates the same project instead of creating
+   a duplicate each time). Without this, two devices' first-ever projects would
+   look like the same project to that matching — either flagged as a stale/newer
+   copy of each other over a synced folder, or silently overwritten by a plain
+   file import — instead of the two separate, unrelated projects they actually
+   are. Called once at startup, before anything can ever compare ids. */
+function ensureUniqueProjectId() {
+  if (currentProjectId !== 'default') return;
+  const newId = `project-${Date.now()}`;
+  const archive = projectArchive();
+  const entry = archive.find(p => p.id === 'default');
+  if (entry) { entry.id = newId; writeProjectArchive(archive); }
+  currentProjectId = newId;
+  persistState();
+}
+
+async function chooseSyncFolder() {
+  if (!syncFolderSupported()) {
+    alert("Folder sync needs the File System Access API, which only Chrome and Edge on desktop support right now — Safari and iPhone browsers don't have it. Use Export/Import to move projects between those.");
+    return;
+  }
+  try {
+    const handle = await window.showDirectoryPicker({ id: 'folio-sync', mode: 'readwrite' });
+    await setSyncFolderHandle(handle);
+    syncFolderHandle = handle;
+    updateSyncFolderUI();
+    ensureUniqueProjectId();
+    saveProjectToArchive(); // writes the current project into the folder immediately
+    await scanSyncFolder();
+  } catch (e) {
+    if (e.name !== 'AbortError') console.error('Could not choose synced folder', e);
+  }
+}
+
+async function reconnectSyncFolder() {
+  if (!syncFolderHandle) return;
+  const granted = await ensureSyncFolderPermission(syncFolderHandle, true);
+  updateSyncFolderUI(!granted);
+  if (granted) { ensureUniqueProjectId(); await scanSyncFolder(); }
+}
+
+async function disconnectSyncFolder() {
+  syncFolderHandle = null;
+  await clearSyncFolderHandle();
+  updateSyncFolderUI();
+  renderSyncConflicts([]);
+}
+
+async function loadSyncFolderHandle() {
+  if (!syncFolderSupported()) { updateSyncFolderUI(); return; }
+  try {
+    const handle = await getSyncFolderHandle();
+    if (!handle) { updateSyncFolderUI(); return; }
+    syncFolderHandle = handle;
+    ensureUniqueProjectId();
+    await scanSyncFolder();
+  } catch (e) {
+    console.error('Could not load synced folder handle', e);
+  }
 }
 
 /* ────────────────────────────────────────
@@ -3072,6 +3342,11 @@ function setupEventListeners() {
     document.getElementById('projects-grid').classList.remove('drag-over');
     const file = [...e.dataTransfer.files].find(f => f.name.endsWith('.folio') || f.type === 'application/json');
     if (file) importProjectFile(file);
+  });
+  document.getElementById('sync-choose-btn').addEventListener('click', chooseSyncFolder);
+  document.getElementById('sync-reconnect-btn').addEventListener('click', reconnectSyncFolder);
+  document.getElementById('sync-disconnect-btn').addEventListener('click', () => {
+    if (confirm('Disconnect this synced folder? Nothing already saved there is deleted — Folio just stops writing to it.')) disconnectSyncFolder();
   });
   document.getElementById('book-formatter-btn').addEventListener('click', openFormatter);
   document.getElementById('formatter-back').addEventListener('click', closeFormatter);
