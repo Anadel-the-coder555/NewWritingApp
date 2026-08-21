@@ -659,24 +659,69 @@ function applySelectionFont(fontValue) {
   return true;
 }
 
-/* Applies a text color only to the current selection. Returns false if there's
-   nothing selected, so the caller can fall back to changing the whole document's
-   color instead. Uses the native foreColor command rather than the hand-rolled
-   extractContents() approach used for font/size above — a selection can span full
-   paragraphs (extracting actual <p> elements) or sit nested inside an already-
-   colored ancestor span, and correctly splitting/merging styled spans around
-   arbitrary selection shapes like that is exactly what foreColor already does
-   internally; a custom version of it is easy to get subtly wrong (confirmed by
-   testing: an earlier hand-rolled version corrupted the document when a selection
-   spanned two full paragraphs, wrapping <p> elements in an inline <span>). */
-function applySelectionColor(hex) {
+/* Colors every text run touched by the selection separately. This preserves the
+   paragraph structure when a selection crosses blocks, while the new spans ensure
+   one color wins even when the selected text previously contained several colors. */
+function styleSelectedTextColor(hex) {
   const editor = document.getElementById('editor');
   const selection = window.getSelection();
-  if (!selection || selection.isCollapsed || !editor.contains(selection.anchorNode)) return false;
-  document.execCommand('styleWithCSS', false, true); // foreColor as style="color:", not legacy <font color>
-  document.execCommand('foreColor', false, hex);
+  if (!selection?.rangeCount || selection.isCollapsed ||
+      !editor.contains(selection.anchorNode) || !editor.contains(selection.focusNode)) return false;
+
+  const range = selection.getRangeAt(0);
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  const runs = [];
+  let node;
+  while ((node = walker.nextNode())) {
+    if (!node.nodeValue.length) continue;
+    try { if (!range.intersectsNode(node)) continue; } catch { continue; }
+    const start = node === range.startContainer ? range.startOffset : 0;
+    const end = node === range.endContainer ? range.endOffset : node.nodeValue.length;
+    if (start < end) runs.push({ node, start, end, span: null });
+  }
+
+  // Work backwards so splitting a boundary text node cannot disturb the offsets
+  // of any run that still needs to be processed.
+  for (let i = runs.length - 1; i >= 0; i--) {
+    const run = runs[i];
+    let selectedNode = run.node;
+    if (run.end < selectedNode.nodeValue.length) selectedNode.splitText(run.end);
+    if (run.start > 0) selectedNode = selectedNode.splitText(run.start);
+    const span = document.createElement('span');
+    span.style.color = hex;
+    selectedNode.before(span);
+    span.appendChild(selectedNode);
+    run.span = span;
+  }
+
+  if (runs.length) {
+    const coloredRange = document.createRange();
+    coloredRange.setStartBefore(runs[0].span);
+    coloredRange.setEndAfter(runs[runs.length - 1].span);
+    selection.removeAllRanges();
+    selection.addRange(coloredRange);
+  }
   saveCurrentDoc();
   return true;
+}
+
+/* Pure black and pure white aren't treated as "real" custom colors — picking
+   either one just means "make this readable," so instead of locking in a literal
+   value that could go invisible the moment the theme changes (or is already wrong
+   for the CURRENT theme — e.g. picking black while already in dark mode), both
+   clear any color override entirely and let the text inherit the theme's own
+   color instead, which is always readable and updates automatically whenever the
+   theme does. Any other color is left exactly as picked, regardless of theme —
+   this is also what keeps white text impossible in light mode and black text
+   impossible in dark mode, since neither can ever be locked in as a literal value. */
+function isThemeSentinelColor(hex) {
+  const normalized = (hex || '').toLowerCase();
+  return normalized === '#000000' || normalized === '#ffffff';
+}
+
+function applySelectionColor(hex) {
+  if (isThemeSentinelColor(hex)) return clearSelectionColor();
+  return styleSelectedTextColor(hex);
 }
 
 /* Opening a native <input type="color"> moves focus out of the editor and some
@@ -715,14 +760,14 @@ function restoreColorSelection() {
    or the whole-document color if one's set. Returns false if there's nothing
    selected, so the caller can reset the whole document's color instead. */
 function clearSelectionColor() {
-  const editor = document.getElementById('editor');
-  const selection = window.getSelection();
-  if (!selection || selection.isCollapsed || !editor.contains(selection.anchorNode)) return false;
-  const ambientColor = rgbToHex(getComputedStyle(editor).color) || '#000000';
-  document.execCommand('styleWithCSS', false, true);
-  document.execCommand('foreColor', false, ambientColor);
-  saveCurrentDoc();
-  return true;
+  // Deliberately a *live* CSS variable reference, not a snapshot of its current
+  // computed value — an inline color still needs to win over any colored ancestor
+  // the selection sits inside (plain CSS inheritance can't skip past that), but
+  // baking in today's resolved color as a fixed hex value would stop tracking the
+  // theme the moment it changes again, which is exactly the bug this is fixing.
+  // var(--text) keeps updating on its own whenever the theme does, same as every
+  // other piece of text that was never colored in the first place.
+  return styleSelectedTextColor('var(--text)');
 }
 
 /* getComputedStyle().color always comes back as "rgb(r, g, b)" (or "rgba(...)"),
@@ -2460,9 +2505,25 @@ async function saveProjectCoverFile(id, file) {
   }
 }
 
+/* True only for the untouched project every fresh install bootstraps into memory
+   before the user has done anything — no content, still the default doc title and
+   project title. Used to stop that bootstrap project from being archived (and so
+   showing up as a spurious blank "Untitled Project" card) purely because the app
+   loaded, on this device or any other. The instant the user actually types a title
+   or any content, this stops being true and the very next save archives it as
+   normal — this only ever skips a project that's never been touched at all. */
+function isProjectPristine() {
+  return docs.length === 1
+    && !docs[0].content
+    && docs[0].title === 'Untitled'
+    && (document.getElementById('project-title-input').value || 'Untitled Project') === 'Untitled Project';
+}
+
 function saveProjectToArchive() {
   saveCurrentDoc();
   const archive = projectArchive();
+  const alreadyArchived = archive.some(p => p.id === currentProjectId);
+  if (!alreadyArchived && isProjectPristine()) return;
   const state = { id: currentProjectId, title: document.getElementById('project-title-input').value || 'Untitled Project', docs: JSON.parse(JSON.stringify(docs)), nextId, activeId, updatedAt: new Date().toISOString() };
   const index = archive.findIndex(p => p.id === state.id);
   if (index >= 0) archive[index] = state; else archive.push(state);
@@ -2804,6 +2865,10 @@ function renderProjects() {
   const archive = projectArchive().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   const allWords = archive.reduce((total, p) => total + (p.docs || []).filter(d => d.section === 'manuscript').reduce((sum, d) => sum + countWords(d.content || ''), 0), 0);
   document.getElementById('projects-summary').textContent = `${archive.length} project${archive.length === 1 ? '' : 's'} · ${allWords.toLocaleString()} words`;
+  if (!archive.length) {
+    document.getElementById('projects-grid').innerHTML = `<div class="projects-empty">No projects yet — click "New project" to start writing, or "Import project…" to bring one in.</div>`;
+    return;
+  }
   document.getElementById('projects-grid').innerHTML = archive.map(p => {
     const words = (p.docs || []).filter(d => d.section === 'manuscript').reduce((sum, d) => sum + countWords(d.content || ''), 0);
     return `<div class="project-card ${p.id === currentProjectId ? 'active' : ''}" data-id="${p.id}">
@@ -3399,8 +3464,14 @@ function setupEventListeners() {
     if (!d) return;
     restoreColorSelection();
     if (!applySelectionColor(this.value)) {
-      d.textColor = this.value;
-      document.getElementById('editor').style.color = this.value;
+      if (isThemeSentinelColor(this.value)) {
+        delete d.textColor;
+        document.getElementById('editor').style.color = '';
+        document.getElementById('fmt-color').value = '#000000';
+      } else {
+        d.textColor = this.value;
+        document.getElementById('editor').style.color = this.value;
+      }
       schedulePersist();
     }
     savedColorRange = null;

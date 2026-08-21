@@ -2274,6 +2274,7 @@ kbd { color: var(--text-faint); background: transparent; }
 #new-project-btn, #compile-export { border-color: var(--accent); color: var(--accent-text); }
 #book-formatter-btn { border-color: var(--accent); color: var(--accent-text); }
 #projects-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 28px; padding: 36px; overflow-y: auto; }
+.projects-empty { grid-column: 1 / -1; padding: 60px 20px; text-align: center; color: var(--text-faint); }
 #projects-grid.drag-over { outline: 2px dashed var(--accent); outline-offset: -12px; background: var(--accent-bg); }
 .project-card { position: relative; z-index: 0; display: flex; flex-direction: column; gap: 8px; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
 .project-card.menu-open { z-index: 100; }
