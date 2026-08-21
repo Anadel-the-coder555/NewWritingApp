@@ -768,7 +768,12 @@ function detectCaretFontSize() {
 function selectedEditorBlocks() {
   const editor = document.getElementById('editor');
   const selection = window.getSelection();
-  if (!selection?.rangeCount || !editor.contains(selection.anchorNode)) return [];
+  // A collapsed selection is just the blinking caret sitting in some paragraph — it
+  // still "intersects" that paragraph as far as Range.intersectsNode is concerned, so
+  // without this check a plain click with nothing highlighted would look identical to
+  // a real selection and silently restyle only that one paragraph instead of falling
+  // through to the whole-document change the caller expects when nothing is selected.
+  if (!selection?.rangeCount || selection.isCollapsed || !editor.contains(selection.anchorNode)) return [];
   const range = selection.getRangeAt(0);
   return Array.from(editor.children).filter(block => {
     try { return range.intersectsNode(block); } catch { return false; }
@@ -2751,11 +2756,16 @@ function switchProject(id) {
 function createProject() {
   const title = prompt('Project name', 'Untitled Project');
   if (!title || !title.trim()) return;
-  saveProjectToArchive(); currentProjectId = `project-${Date.now()}`;
+  saveProjectToArchive(); // flush whatever was being edited in the previous project
+  currentProjectId = `project-${Date.now()}`;
   docs = [{ id: 1, title: 'Untitled', storyDate: '', banner: '', content: '', synopsis: '', status: 'draft', target: 0, tags: [], parent: null, isFolder: false, section: 'manuscript', createdAt: new Date() }];
   nextId = 2; activeId = 1; sessionBaseWords = getSessionBase();
   document.getElementById('project-title-input').value = title.trim();
-  persistState(); saveProjectToArchive(); document.getElementById('projects-overlay').classList.remove('open'); renderTree(); loadDoc(activeId);
+  document.getElementById('projects-overlay').classList.remove('open');
+  renderTree();
+  loadDoc(activeId); // refresh the editor DOM to the new blank doc BEFORE anything below reads it back out
+  persistState();
+  saveProjectToArchive();
 }
 
 /* ────────────────────────────────────────
@@ -3054,13 +3064,17 @@ async function scanSyncFolder() {
    file import — instead of the two separate, unrelated projects they actually
    are. Called once at startup, before anything can ever compare ids. */
 function ensureUniqueProjectId() {
-  if (currentProjectId !== 'default') return;
-  const newId = `project-${Date.now()}`;
+  // Checks the whole archive, not just whichever project happens to be open right
+  // now — someone with several pre-existing projects might not currently have their
+  // very first one (the one actually carrying the old 'default' id) active, and it
+  // would otherwise sit in the list indefinitely still vulnerable to the collision.
   const archive = projectArchive();
-  const entry = archive.find(p => p.id === 'default');
-  if (entry) { entry.id = newId; writeProjectArchive(archive); }
-  currentProjectId = newId;
-  persistState();
+  const staleEntry = archive.find(p => p.id === 'default');
+  if (!staleEntry && currentProjectId !== 'default') return;
+
+  const newId = `project-${Date.now()}`;
+  if (staleEntry) { staleEntry.id = newId; writeProjectArchive(archive); }
+  if (currentProjectId === 'default') { currentProjectId = newId; persistState(); }
 }
 
 async function chooseSyncFolder() {
