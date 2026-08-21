@@ -355,6 +355,8 @@ function loadDoc(id) {
   document.getElementById('fmt-size').value          = '';
   document.getElementById('editor').style.lineHeight = d.lineHeight || '1';
   document.getElementById('fmt-line-spacing').value  = d.lineHeight || '1';
+  document.getElementById('editor').style.color      = d.textColor || '';
+  document.getElementById('fmt-color').value         = d.textColor || '#000000';
   document.querySelectorAll('#editor .scene-break').forEach(sceneBreak => {
     const followingParagraph = sceneBreak.nextElementSibling;
     if (followingParagraph?.tagName === 'P') {
@@ -635,6 +637,61 @@ function applySelectionFont(fontValue) {
   selection.addRange(caret);
   saveCurrentDoc();
   return true;
+}
+
+/* Applies a text color only to the current selection. Returns false if there's
+   nothing selected, so the caller can fall back to changing the whole document's
+   color instead. Uses the native foreColor command rather than the hand-rolled
+   extractContents() approach used for font/size above — a selection can span full
+   paragraphs (extracting actual <p> elements) or sit nested inside an already-
+   colored ancestor span, and correctly splitting/merging styled spans around
+   arbitrary selection shapes like that is exactly what foreColor already does
+   internally; a custom version of it is easy to get subtly wrong (confirmed by
+   testing: an earlier hand-rolled version corrupted the document when a selection
+   spanned two full paragraphs, wrapping <p> elements in an inline <span>). */
+function applySelectionColor(hex) {
+  const editor = document.getElementById('editor');
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !editor.contains(selection.anchorNode)) return false;
+  document.execCommand('styleWithCSS', false, true); // foreColor as style="color:", not legacy <font color>
+  document.execCommand('foreColor', false, hex);
+  saveCurrentDoc();
+  return true;
+}
+
+/* Strips an explicit color back off the current selection by painting it with
+   whatever color the editor would show without any override — the theme default,
+   or the whole-document color if one's set. Returns false if there's nothing
+   selected, so the caller can reset the whole document's color instead. */
+function clearSelectionColor() {
+  const editor = document.getElementById('editor');
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !editor.contains(selection.anchorNode)) return false;
+  const ambientColor = rgbToHex(getComputedStyle(editor).color) || '#000000';
+  document.execCommand('styleWithCSS', false, true);
+  document.execCommand('foreColor', false, ambientColor);
+  saveCurrentDoc();
+  return true;
+}
+
+/* getComputedStyle().color always comes back as "rgb(r, g, b)" (or "rgba(...)"),
+   but <input type="color"> only accepts "#rrggbb" — this bridges the two so the
+   swatch can be kept in sync with whatever's under the caret. */
+function rgbToHex(rgb) {
+  const match = rgb && rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (!match) return null;
+  const toHex = n => Number(n).toString(16).padStart(2, '0');
+  return `#${toHex(match[1])}${toHex(match[2])}${toHex(match[3])}`;
+}
+
+function detectCaretColor() {
+  const editor = document.getElementById('editor');
+  const selection = window.getSelection();
+  const node = selection?.anchorNode;
+  const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  if (!(element instanceof Element) || !editor.contains(element)) return;
+  const hex = rgbToHex(getComputedStyle(element).color);
+  if (hex) document.getElementById('fmt-color').value = hex;
 }
 
 function applySelectionFontSize(sizeValue) {
@@ -3165,6 +3222,29 @@ function setupEventListeners() {
     applyLineSpacing(this.value);
   });
 
+  document.getElementById('fmt-color').addEventListener('change', function() {
+    const d = docs.find(x => x.id === activeId);
+    if (!d) return;
+    if (!applySelectionColor(this.value)) {
+      d.textColor = this.value;
+      document.getElementById('editor').style.color = this.value;
+      schedulePersist();
+    }
+    document.getElementById('editor').focus();
+  });
+
+  document.getElementById('fmt-color-reset').addEventListener('click', () => {
+    const d = docs.find(x => x.id === activeId);
+    if (!d) return;
+    if (!clearSelectionColor()) {
+      delete d.textColor;
+      document.getElementById('editor').style.color = '';
+      document.getElementById('fmt-color').value = '#000000';
+      schedulePersist();
+    }
+    document.getElementById('editor').focus();
+  });
+
   /* Editor input */
   document.getElementById('editor').addEventListener('input', () => {
     autoConvertEmDash();
@@ -3181,11 +3261,14 @@ function setupEventListeners() {
   document.getElementById('editor').addEventListener('click', detectCaretFont);
   document.getElementById('editor').addEventListener('keyup', detectCaretLineSpacing);
   document.getElementById('editor').addEventListener('click', detectCaretLineSpacing);
+  document.getElementById('editor').addEventListener('keyup', detectCaretColor);
+  document.getElementById('editor').addEventListener('click', detectCaretColor);
   document.addEventListener('selectionchange', () => {
     if (typewriterMode) centerCurrentLine();
     detectCaretFontSize();
     detectCaretFont();
     detectCaretLineSpacing();
+    detectCaretColor();
   });
 
   /* Revision and writing-mode toolbar */

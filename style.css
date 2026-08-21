@@ -334,6 +334,21 @@ body {
   cursor: pointer;
 }
 
+.fmt-color {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+.fmt-color::-webkit-color-swatch-wrapper { padding: 3px; }
+.fmt-color::-webkit-color-swatch { border: none; border-radius: 3px; }
+.fmt-color::-moz-color-swatch { border: none; border-radius: 3px; }
+
 /* ── Editor Scroll ── */
 #editor-scroll {
   flex: 1;
