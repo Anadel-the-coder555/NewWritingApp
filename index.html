@@ -147,6 +147,11 @@
       <button class="fmt-btn" title="Align Left" data-cmd="justifyLeft">⇐</button>
       <button class="fmt-btn" title="Align Center" data-cmd="justifyCenter">↔</button>
       <div class="tb-spacer"></div>
+      <div class="editor-zoom-controls" role="group" aria-label="Editor page zoom">
+        <button class="toolbar-text-btn zoom-btn" id="editor-zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+        <button class="toolbar-text-btn zoom-level" id="editor-zoom-reset" title="Reset zoom" aria-label="Reset editor zoom to 100%">100%</button>
+        <button class="toolbar-text-btn zoom-btn" id="editor-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+      </div>
       <button class="toolbar-text-btn mode-toggle icon-mode-btn" id="typewriter-btn" title="Typewriter scrolling" aria-label="Typewriter scrolling" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3h10v6M7 6h7M3 10h18l-1 9H4zM21 10l2-2M8 19h8M7 16h10"/><circle cx="7" cy="13" r=".7"/><circle cx="10.3" cy="13" r=".7"/><circle cx="13.7" cy="13" r=".7"/><circle cx="17" cy="13" r=".7"/></svg></button>
       <button class="toolbar-text-btn mode-toggle icon-mode-btn" id="proofing-btn" title="Proofing mode" aria-label="Proofing mode" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 13 4 4L20 5M4 5h8M4 9h5"/></svg></button>
       <button class="toolbar-text-btn mode-toggle icon-mode-btn" id="split-btn" title="Split reference" aria-label="Split reference" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M12 4v16"/></svg></button>
@@ -413,6 +418,7 @@
   <button data-option="split"><span>Split reference</span><i></i></button>
   <button data-option="margin"><span>Margin notes</span><i></i></button>
   <button data-option="fixdashes"><span>Convert typed dashes to em dash</span><i></i></button>
+  <button data-option="fixcolors"><span>Remove pasted text colors</span><i></i></button>
   <div class="options-group-label">Project</div>
   <button data-option="compile"><span>Compile &amp; export…</span><kbd>⇧⌘E</kbd></button>
   <button data-option="snapshot"><span>Take snapshot</span><kbd>⌘S</kbd></button>

@@ -39,7 +39,26 @@ const DEFAULT_FONT  = "'Playfair Display', serif";
    Local Storage Persistence
 ──────────────────────────────────────── */
 const STORAGE_KEY = 'folio-project';
+const EDITOR_ZOOM_KEY = 'folio-editor-zoom';
 let persistTimer = null;
+
+let editorZoom = 100;
+
+function setEditorZoom(value, persist = true) {
+  editorZoom = Math.max(60, Math.min(160, Math.round(value / 10) * 10));
+  const page = document.getElementById('editor-wrap');
+  const readout = document.getElementById('editor-zoom-reset');
+  if (page) page.style.zoom = `${editorZoom}%`;
+  if (readout) {
+    readout.textContent = `${editorZoom}%`;
+    readout.setAttribute('aria-label', `Reset editor zoom to 100%. Current zoom ${editorZoom}%`);
+  }
+  const zoomOut = document.getElementById('editor-zoom-out');
+  const zoomIn = document.getElementById('editor-zoom-in');
+  if (zoomOut) zoomOut.disabled = editorZoom <= 60;
+  if (zoomIn) zoomIn.disabled = editorZoom >= 160;
+  if (persist) localStorage.setItem(EDITOR_ZOOM_KEY, String(editorZoom));
+}
 
 function persistState() {
   try {
@@ -227,6 +246,7 @@ function toggleSettingsMenu(force) {
 
 function init() {
   initTheme();
+  setEditorZoom(Number(localStorage.getItem(EDITOR_ZOOM_KEY)) || 100, false);
   loadPersistedState();
   ensureUniqueProjectId(); // migrate off the generic 'default' id every install starts with, before anything can compare ids against another device's file
   renderTree();
@@ -659,6 +679,37 @@ function applySelectionColor(hex) {
   return true;
 }
 
+/* Opening a native <input type="color"> moves focus out of the editor and some
+   browsers discard the highlighted range before the picker fires `change`.
+   Keep a clone of that range so the color is applied to the text the user
+   actually highlighted, rather than falling back to the whole document. */
+let savedColorRange = null;
+
+function rememberColorSelection() {
+  const editor = document.getElementById('editor');
+  const selection = window.getSelection();
+  if (!selection?.rangeCount || selection.isCollapsed) {
+    savedColorRange = null;
+    return;
+  }
+  const range = selection.getRangeAt(0);
+  savedColorRange = editor.contains(range.startContainer) && editor.contains(range.endContainer)
+    ? range.cloneRange()
+    : null;
+}
+
+function restoreColorSelection() {
+  if (!savedColorRange) return;
+  const editor = document.getElementById('editor');
+  if (!editor.contains(savedColorRange.startContainer) || !editor.contains(savedColorRange.endContainer)) {
+    savedColorRange = null;
+    return;
+  }
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(savedColorRange);
+}
+
 /* Strips an explicit color back off the current selection by painting it with
    whatever color the editor would show without any override — the theme default,
    or the whole-document color if one's set. Returns false if there's nothing
@@ -692,6 +743,101 @@ function detectCaretColor() {
   if (!(element instanceof Element) || !editor.contains(element)) return;
   const hex = rgbToHex(getComputedStyle(element).color);
   if (hex) document.getElementById('fmt-color').value = hex;
+}
+
+/* Rich text copied from Google Docs, Word, Pages, etc. always carries an explicit
+   inline color on every run (almost always a hardcoded near-black, even if the
+   author never touched the color themselves — it's just that app's default) and
+   often a background-color too. Pasted as-is, that hardcoded color permanently
+   overrides the theme, which is why pasted text stays dark in dark mode while text
+   typed directly into the editor correctly follows the theme via CSS. Stripping
+   just color/background on the way in — not font, size, bold, italic, etc. — keeps
+   pasted text themeable by default, same as typed text, while leaving every other
+   bit of pasted formatting untouched. */
+function stripPastedColor(html) {
+  const wrap = document.createElement('div');
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('[style]').forEach(el => {
+    el.style.removeProperty('color');
+    el.style.removeProperty('background-color');
+    el.style.removeProperty('background');
+    if (!el.getAttribute('style')) el.removeAttribute('style');
+  });
+  wrap.querySelectorAll('font').forEach(el => el.removeAttribute('color'));
+  return wrap.innerHTML;
+}
+
+const PASTE_BLOCK_TAGS = /^(P|DIV|H1|H2|H3|BLOCKQUOTE|UL|OL|LI)$/;
+
+/* Inserts a list of nodes at a Range and leaves the caret right after the last
+   one — the shared tail end of both paste paths below. */
+function insertNodesAtRange(range, nodes, selection) {
+  const fragment = document.createDocumentFragment();
+  let lastNode = null;
+  nodes.forEach(node => { lastNode = fragment.appendChild(node); });
+  range.insertNode(fragment);
+  if (lastNode) {
+    const caret = document.createRange();
+    caret.setStartAfter(lastNode);
+    caret.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(caret);
+  }
+}
+
+/* Inserted via the Range API rather than execCommand('insertHTML', ...) on
+   purpose: execCommand's insertHTML bakes the *currently rendered* computed color
+   into whatever it inserts (to keep pasted content visually self-contained at the
+   moment of pasting) even when the source HTML has no color of its own — which
+   would silently reintroduce this exact bug the next time the theme changes,
+   since that baked-in value stops following the theme from then on (confirmed by
+   testing: switching themes after a paste left the old, now-mismatched color). */
+function handleThemeablePaste(e) {
+  const html = e.clipboardData?.getData('text/html');
+  if (!html) return; // plain text (or an image, etc.) has no color to strip — let the browser handle it normally
+  e.preventDefault();
+
+  const editor = document.getElementById('editor');
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return;
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+
+  const wrap = document.createElement('div');
+  wrap.innerHTML = stripPastedColor(html);
+  const incomingNodes = Array.from(wrap.childNodes);
+  const hasBlockContent = incomingNodes.some(n => n.nodeType === Node.ELEMENT_NODE && PASTE_BLOCK_TAGS.test(n.tagName));
+
+  // Pasting block-level content (multiple paragraphs, a list, …) requires special
+  // care if the caret sits in the middle of an existing paragraph's text: a plain
+  // Range.insertNode would nest those new <p> elements inside the current one
+  // (invalid HTML) instead of landing next to it, and every other part of the app —
+  // word counts, Book Mode pagination, Compile/export — assumes #editor's children
+  // are a flat sequence of top-level blocks with nothing nested inside them. So the
+  // current block gets split in two at the caret first, and the pasted blocks land
+  // between the two halves instead.
+  const container = range.startContainer;
+  const currentBlock = (container.nodeType === Node.ELEMENT_NODE ? container : container.parentElement)?.closest('#editor > *');
+
+  if (hasBlockContent && currentBlock) {
+    const afterRange = document.createRange();
+    afterRange.setStart(range.startContainer, range.startOffset);
+    afterRange.setEndAfter(currentBlock.lastChild || currentBlock);
+    const afterHalf = currentBlock.cloneNode(false);
+    afterHalf.appendChild(afterRange.extractContents());
+    currentBlock.after(afterHalf);
+    if (!currentBlock.hasChildNodes()) currentBlock.appendChild(document.createElement('br')); // don't let an empty "before" half collapse away
+    if (!afterHalf.hasChildNodes()) afterHalf.appendChild(document.createElement('br'));
+
+    const insertionPoint = document.createRange();
+    insertionPoint.setStartBefore(afterHalf);
+    insertionPoint.collapse(true);
+    insertNodesAtRange(insertionPoint, incomingNodes, selection);
+  } else {
+    insertNodesAtRange(range, incomingNodes, selection);
+  }
+
+  editor.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function applySelectionFontSize(sizeValue) {
@@ -946,6 +1092,25 @@ function convertTypedDashesToEmDash() {
   updateStats();
   renderTree();
   alert('Converted typed dashes to em dashes (—) in this document.');
+}
+
+/* One-time cleanup for content that was pasted in before handleThemeablePaste()
+   existed (or from anywhere else a hardcoded color could have snuck in) — strips
+   every inline color/background in the document so it falls back to following the
+   theme, same as handleThemeablePaste() does for new pastes going forward. This
+   also clears any color applied on purpose via the font-color picker, since a
+   hardcoded color and an intentionally-applied one are the same style property
+   and can't be told apart after the fact — it's an explicit, whole-document reset. */
+function stripDocumentColors() {
+  const editor = document.getElementById('editor');
+  const before = editor.innerHTML;
+  const after = stripPastedColor(before);
+  if (after === before) { alert('No colored text found in this document.'); return; }
+  editor.innerHTML = after;
+  saveCurrentDoc();
+  updateStats();
+  renderTree();
+  alert('Removed hardcoded text colors from this document — it now follows the current theme.');
 }
 
 function applyBlock(tag) {
@@ -3184,6 +3349,10 @@ async function loadSyncFolderHandle() {
 ──────────────────────────────────────── */
 function setupEventListeners() {
 
+  document.getElementById('editor-zoom-out').addEventListener('click', () => setEditorZoom(editorZoom - 10));
+  document.getElementById('editor-zoom-in').addEventListener('click', () => setEditorZoom(editorZoom + 10));
+  document.getElementById('editor-zoom-reset').addEventListener('click', () => setEditorZoom(100));
+
   /* Toolbar format buttons */
   document.querySelectorAll('.fmt-btn[data-cmd]').forEach(btn => {
     btn.addEventListener('click', () => fmt(btn.dataset.cmd));
@@ -3222,26 +3391,35 @@ function setupEventListeners() {
     applyLineSpacing(this.value);
   });
 
-  document.getElementById('fmt-color').addEventListener('change', function() {
+  const textColorPicker = document.getElementById('fmt-color');
+  textColorPicker.addEventListener('pointerdown', rememberColorSelection);
+  textColorPicker.addEventListener('keydown', rememberColorSelection);
+  textColorPicker.addEventListener('change', function() {
     const d = docs.find(x => x.id === activeId);
     if (!d) return;
+    restoreColorSelection();
     if (!applySelectionColor(this.value)) {
       d.textColor = this.value;
       document.getElementById('editor').style.color = this.value;
       schedulePersist();
     }
+    savedColorRange = null;
     document.getElementById('editor').focus();
   });
 
-  document.getElementById('fmt-color-reset').addEventListener('click', () => {
+  const textColorReset = document.getElementById('fmt-color-reset');
+  textColorReset.addEventListener('pointerdown', rememberColorSelection);
+  textColorReset.addEventListener('click', () => {
     const d = docs.find(x => x.id === activeId);
     if (!d) return;
+    restoreColorSelection();
     if (!clearSelectionColor()) {
       delete d.textColor;
       document.getElementById('editor').style.color = '';
       document.getElementById('fmt-color').value = '#000000';
       schedulePersist();
     }
+    savedColorRange = null;
     document.getElementById('editor').focus();
   });
 
@@ -3263,6 +3441,7 @@ function setupEventListeners() {
   document.getElementById('editor').addEventListener('click', detectCaretLineSpacing);
   document.getElementById('editor').addEventListener('keyup', detectCaretColor);
   document.getElementById('editor').addEventListener('click', detectCaretColor);
+  document.getElementById('editor').addEventListener('paste', handleThemeablePaste);
   document.addEventListener('selectionchange', () => {
     if (typewriterMode) centerCurrentLine();
     detectCaretFontSize();
@@ -3278,6 +3457,7 @@ function setupEventListeners() {
   document.getElementById('split-close').addEventListener('click', () => toggleSplit(false));
   document.getElementById('split-doc-select').addEventListener('change', e => { saveSplitReference(); splitReferenceId = +e.target.value; renderSplitReference(); schedulePersist(); });
   document.getElementById('split-reference-content').addEventListener('input', saveSplitReference);
+  document.getElementById('split-reference-content').addEventListener('paste', handleThemeablePaste);
   document.getElementById('margin-note-add').addEventListener('click', annotateSelection);
   document.getElementById('doc-notes-summary').addEventListener('click', () => showInspectorPanel('notes'));
 
@@ -3393,7 +3573,7 @@ function setupEventListeners() {
   });
   document.getElementById('btn-menu').addEventListener('click', e => { e.stopPropagation(); toggleOptionsMenu(); });
   document.querySelectorAll('#options-menu [data-option]').forEach(btn => btn.addEventListener('click', () => {
-    const actions = { typewriter: () => setTypewriterMode(), proofing: toggleProofing, beats: toggleBeats, template: applyBeatTemplate, split: () => toggleSplit(), margin: () => toggleMargin(), fixdashes: convertTypedDashesToEmDash, compile: openCompile, snapshot: takeSnapshot, book: openBookMode, focus: toggleFocus };
+    const actions = { typewriter: () => setTypewriterMode(), proofing: toggleProofing, beats: toggleBeats, template: applyBeatTemplate, split: () => toggleSplit(), margin: () => toggleMargin(), fixdashes: convertTypedDashesToEmDash, fixcolors: stripDocumentColors, compile: openCompile, snapshot: takeSnapshot, book: openBookMode, focus: toggleFocus };
     actions[btn.dataset.option](); toggleOptionsMenu(false);
   }));
   document.addEventListener('click', e => { if (!e.target.closest('#options-menu') && !e.target.closest('#btn-menu')) toggleOptionsMenu(false); });

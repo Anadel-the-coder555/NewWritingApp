@@ -2352,6 +2352,9 @@ body.proofing-mode #editor-toolbar > :not(.tb-spacer):not(.mode-toggle) { displa
 }
 .toolbar-text-btn:hover,
 .toolbar-text-btn.active { border-color: var(--accent); color: var(--accent-text); background: var(--accent-bg); }
+.editor-zoom-controls { display: flex; align-items: center; gap: 2px; }
+.zoom-btn { width: 27px; padding: 0; font-size: 16px; }
+.zoom-level { min-width: 48px; padding-inline: 6px; font-size: 10px; font-variant-numeric: tabular-nums; }
 .icon-mode-btn { width: 30px; padding: 0; display: inline-grid; place-items: center; }
 .icon-mode-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
