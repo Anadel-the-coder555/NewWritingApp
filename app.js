@@ -2691,6 +2691,97 @@ function applyFormatterDropCap(prose) {
   }
 }
 
+/* Appends `original` (a block that didn't fit whole on the current page) into
+   the formatter output word by word, splitting across as many pages as it takes
+   — but unlike a plain-text rebuild, it walks the block's actual DOM and keeps
+   every inline tag (bold, italic, underline, …) wrapped around exactly the words
+   it belongs to, reopening whatever tags were "in progress" at the top of each
+   new page it spans. Without this, a paragraph that happened to straddle a page
+   break would silently lose any bold/italic sitting right at the split — rare at
+   normal text sizes, but the split point falls inside *some* paragraph on nearly
+   every page once the text is large enough that most paragraphs need splitting,
+   which is exactly why the loss went from unnoticeable to constant.
+   pageCtx = { current } is mutated in place so the caller sees whichever page
+   things ended up on. */
+function splitBlockPreservingFormatting(original, chapter, pageCtx, createPage, overflows, wantsDropCap) {
+  let current = pageCtx.current;
+  const topTag = original.tagName || 'P';
+  let topParagraph = document.createElement(topTag);
+  current.prose.appendChild(topParagraph);
+  let target = topParagraph;
+  const openChain = []; // inline tag names currently open, outer to inner
+  let dropCapPending = Boolean(wantsDropCap);
+
+  function maybeApplyDropCap() {
+    if (!dropCapPending) return;
+    applyFormatterDropCap(current.prose);
+    dropCapPending = false;
+  }
+
+  function newPage() {
+    current = createPage(chapter, true);
+    pageCtx.current = current;
+    topParagraph = document.createElement(topTag);
+    current.prose.appendChild(topParagraph);
+    let t = topParagraph;
+    openChain.forEach(tagName => {
+      const wrap = document.createElement(tagName);
+      t.appendChild(wrap);
+      t = wrap;
+    });
+    target = t;
+  }
+
+  function walkText(node) {
+    const tokens = node.textContent.split(/(\s+)/).filter(Boolean);
+    if (!tokens.length) return;
+    let idx = 0;
+    let textNode = document.createTextNode('');
+    target.appendChild(textNode);
+    let fitted = '';
+    while (idx < tokens.length) {
+      const attempt = fitted + tokens[idx];
+      textNode.textContent = attempt;
+      if (overflows(current.page)) {
+        textNode.textContent = fitted;
+        if (fitted) maybeApplyDropCap();
+        if (!fitted) textNode.remove();
+        newPage();
+        textNode = document.createTextNode('');
+        target.appendChild(textNode);
+        fitted = '';
+        continue; // retry this same token on the fresh page
+      }
+      fitted = attempt;
+      idx++;
+    }
+    if (fitted) maybeApplyDropCap(); else textNode.remove();
+  }
+
+  function walk(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (node.textContent) walkText(node);
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const wrap = document.createElement(node.tagName);
+    target.appendChild(wrap);
+    openChain.push(node.tagName);
+    const prevTarget = target;
+    target = wrap;
+    Array.from(node.childNodes).forEach(walk);
+    target = prevTarget;
+    openChain.pop();
+    if (!wrap.hasChildNodes()) wrap.remove();
+  }
+
+  if (original.nodeType === Node.TEXT_NODE) walkText(original);
+  else Array.from(original.childNodes).forEach(walk);
+
+  if (!topParagraph.hasChildNodes()) topParagraph.remove();
+  pageCtx.current = current;
+}
+
 function renderFormatter() {
   const project = selectedFormatterProject();
   const settings = formatterSettings();
@@ -2728,33 +2819,12 @@ function renderFormatter() {
       // page break, filling each page with as much as fits; moving it wholesale
       // instead left the chapter's title page (or any page a block didn't quite
       // fit) completely empty of body text, with everything starting on the next
-      // page instead. Word-by-word plain-text chunking only visibly costs inline
-      // formatting for the sliver of text that happens to straddle the exact page
-      // break, which is far better than losing an entire page's worth of layout.
+      // page instead. splitBlockPreservingFormatting keeps every word's bold,
+      // italic, etc. intact across the split, rather than flattening to plain text.
       block.remove();
-      const remaining = original.textContent.trim().split(/\s+/).filter(Boolean);
-      let needsDropCap = blockIndex === 0 && settings.dropcaps;
-      while (remaining.length) {
-        const paragraph = document.createElement('p');
-        current.prose.appendChild(paragraph);
-        let fitted = 0;
-        while (fitted < remaining.length) {
-          paragraph.textContent = remaining.slice(0, fitted + 1).join(' ');
-          if (overflows(current.page)) break;
-          fitted += 1;
-        }
-        if (fitted === 0) {
-          paragraph.remove();
-          current = createPage(chapter, true);
-          continue;
-        }
-        paragraph.textContent = remaining.splice(0, fitted).join(' ');
-        if (needsDropCap) {
-          applyFormatterDropCap(current.prose);
-          needsDropCap = false;
-        }
-        if (remaining.length) current = createPage(chapter, true);
-      }
+      const pageCtx = { current };
+      splitBlockPreservingFormatting(original, chapter, pageCtx, createPage, overflows, blockIndex === 0 && settings.dropcaps);
+      current = pageCtx.current;
     });
   });
 
