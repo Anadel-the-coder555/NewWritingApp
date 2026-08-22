@@ -2604,6 +2604,27 @@ function formatterDocuments(project, settings) {
 /* Strips whitespace (regular spaces, tabs, &nbsp;) from the very start of an
    element's first line of text — used to remove manually-typed paragraph
    indentation before the formatter applies its own. */
+const FORMATTER_SPACING_PROPS = [
+  'text-indent',
+  'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+  'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+];
+
+/* Strips paragraph-spacing properties specifically (not font, size, bold, color,
+   etc.) that Word/Google Docs/Pages bake into every single paragraph on paste or
+   export — left in place, they fight the formatter's own uniform indent/spacing
+   the exact same way a pasted hardcoded color used to fight the app's theme, and
+   for the same underlying reason: nothing in the source enforced one consistent
+   value, so paragraphs end up indented and spaced by a different, essentially
+   arbitrary amount each instead of an even, book-typeset rhythm. */
+function stripInlineSpacing(el) {
+  [el, ...el.querySelectorAll('[style]')].forEach(node => {
+    if (!node.hasAttribute('style')) return;
+    FORMATTER_SPACING_PROPS.forEach(prop => node.style.removeProperty(prop));
+    if (!node.getAttribute('style')) node.removeAttribute('style');
+  });
+}
+
 function stripLeadingIndent(el) {
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   const node = walker.nextNode();
@@ -2637,6 +2658,7 @@ function cleanBookHTML(html) {
   [...wrap.children].forEach(block => {
     if (block.classList.contains('scene-break') || block.classList.contains('book-scene-break')) return;
     stripLeadingIndent(block);
+    stripInlineSpacing(block);
   });
   return wrap.innerHTML;
 }
@@ -3873,7 +3895,8 @@ function setupEventListeners() {
   document.getElementById('book-next').addEventListener('click', () => { if (isPhoneWidth()) bookPhoneNext(); else bookFlipForward(); });
   document.getElementById('book-prev').addEventListener('click', () => { if (isPhoneWidth()) bookPhonePrev(); else bookFlipBackward(); });
   document.getElementById('book-curl').addEventListener('click', () => { if (isPhoneWidth()) bookPhoneNext(); else bookFlipForward(); });
-  document.getElementById('book-editor').addEventListener('input', bookUpdateWC);
+  document.getElementById('book-editor').addEventListener('input', () => scheduleBookOverflowCheck('right'));
+  document.getElementById('book-left-content').addEventListener('input', () => scheduleBookOverflowCheck('left'));
   document.addEventListener('keydown', e => {
     if (!document.getElementById('book-overlay').classList.contains('open')) return;
     if (e.key === 'PageDown') { e.preventDefault(); if (isPhoneWidth()) bookPhoneNext(); else bookFlipForward(); }
@@ -3951,6 +3974,75 @@ function bookSerializePage(el) {
   return paras;
 }
 
+/* Returns the inner HTML for a character slice of a paragraph while retaining
+   spans, emphasis, and other inline formatting that crosses the split point. */
+function bookParagraphSlice(source, start, end) {
+  const range = document.createRange();
+  range.selectNodeContents(source);
+  const walker = document.createTreeWalker(source, NodeFilter.SHOW_TEXT);
+  let node;
+  let offset = 0;
+  let startSet = start === 0;
+  while ((node = walker.nextNode())) {
+    const next = offset + node.nodeValue.length;
+    if (!startSet && start <= next) {
+      range.setStart(node, Math.max(0, start - offset));
+      startSet = true;
+    }
+    if (end <= next) {
+      range.setEnd(node, Math.max(0, end - offset));
+      break;
+    }
+    offset = next;
+  }
+  const holder = document.createElement('div');
+  holder.appendChild(range.cloneContents());
+  return holder.innerHTML.trim();
+}
+
+/* Finds the largest word-boundary prefix of an overflowing paragraph that fits
+   in the page's remaining space. Character boundaries are the final fallback for
+   an unusually long unbroken word on an otherwise empty page. */
+function splitBookParagraphToFit(para, measurer, indent = false) {
+  const holder = document.createElement('div');
+  holder.innerHTML = bookParagraphHTML(para, indent);
+  const source = holder.firstElementChild;
+  const text = source?.textContent || '';
+  if (!text) return [para, ''];
+  const existingMarkup = measurer.innerHTML;
+  const pageWasEmpty = !measurer.children.length;
+
+  let boundaries = [...text.matchAll(/\s+/g)].map(match => match.index + match[0].length);
+  boundaries.push(text.length);
+
+  const prefixFits = end => {
+    measurer.innerHTML = existingMarkup + bookParagraphHTML(bookParagraphSlice(source, 0, end), indent);
+    return measurer.scrollHeight <= measurer.clientHeight + 1;
+  };
+
+  let low = 0;
+  let high = boundaries.length - 1;
+  let best = 0;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    if (prefixFits(boundaries[mid])) { best = boundaries[mid]; low = mid + 1; }
+    else high = mid - 1;
+  }
+
+  if (!best && pageWasEmpty) {
+    low = 1;
+    high = text.length;
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      if (prefixFits(mid)) { best = mid; low = mid + 1; }
+      else high = mid - 1;
+    }
+  }
+
+  if (!best && pageWasEmpty) best = 1;
+  return [bookParagraphSlice(source, 0, best), bookParagraphSlice(source, best, text.length)];
+}
+
 /* Visible character count of a paragraph, ignoring markup — used to keep pagination
    based on actual prose length instead of counting style-attribute characters. */
 /* Paginates paragraphs by actually rendering them into a hidden measuring element
@@ -3993,20 +4085,28 @@ function bookPaginate(paras) {
 
   const pages = [];
   let currentPage = [];
+  const pending = [...paras];
 
-  paras.forEach(para => {
+  while (pending.length) {
+    const para = pending.shift();
     measurer.insertAdjacentHTML('beforeend', bookParagraphHTML(para, currentPage.length !== 0));
-    if (!fits() && currentPage.length > 0) {
-      // This paragraph is what pushed it over — back it out, close the page here,
-      // and start the next one with it instead.
-      measurer.lastElementChild.remove();
-      pages.push(currentPage);
-      currentPage = [];
-      measurer.innerHTML = '';
-      measurer.insertAdjacentHTML('beforeend', bookParagraphHTML(para, false));
+    if (fits()) {
+      currentPage.push(para);
+      continue;
     }
-    currentPage.push(para);
-  });
+
+    // Back out the overflowing whole paragraph, then use as much of it as will
+    // fit in the page's remaining lines. This avoids large page-to-page word-count
+    // swings caused by always moving an entire long paragraph forward.
+    measurer.lastElementChild.remove();
+    const [fittingPart, remainder] = splitBookParagraphToFit(para, measurer, currentPage.length !== 0);
+    if (fittingPart) currentPage.push(fittingPart);
+    pages.push(currentPage);
+    currentPage = [];
+    measurer.innerHTML = '';
+    if (remainder) pending.unshift(remainder);
+    else if (!fittingPart) pending.unshift(para);
+  }
 
   if (currentPage.length > 0) pages.push(currentPage);
   measurer.remove();
@@ -4054,6 +4154,50 @@ let bookPages    = [];
 let bookSpread   = 0;
 let bookFlipping = false;
 let bookPhoneIdx = -1; // single-page index used instead of bookSpread when isPhoneWidth()
+let bookOverflowTimer = null;
+
+function placeCaretAtEnd(el) {
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  el.focus();
+}
+
+/* Reflows only when the editable surface has genuinely run out of vertical room.
+   The continuation is shown on the following page immediately, so no prose can
+   remain concealed behind the page's overflow boundary. */
+function scheduleBookOverflowCheck(side) {
+  bookUpdateWC();
+  clearTimeout(bookOverflowTimer);
+  bookOverflowTimer = setTimeout(() => {
+    const phone = isPhoneWidth();
+    const el = document.getElementById(phone || side === 'right' ? 'book-editor' : 'book-left-content');
+    if (el.scrollHeight <= el.clientHeight + 1) return;
+
+    if (phone) {
+      const previousIndex = bookPhoneIdx;
+      bookPhoneResplit();
+      if (previousIndex < bookPages.length - 1) {
+        bookPhoneIdx = previousIndex + 1;
+        bookRenderPhonePage();
+        placeCaretAtEnd(document.getElementById('book-editor'));
+      }
+      return;
+    }
+
+    bookReSplitCurrentPage(side);
+    if (side === 'right') {
+      bookSpread++;
+      bookRenderSpread();
+      placeCaretAtEnd(document.getElementById('book-left-content'));
+    } else {
+      placeCaretAtEnd(document.getElementById('book-editor'));
+    }
+  }, 80);
+}
 
 function openBookMode() {
   saveCurrentDoc(); // flush any edit still sitting in the debounced autosave before reading d.content
@@ -4065,6 +4209,16 @@ function openBookMode() {
   // overlay is still display:none. Nothing paints in between: the render calls
   // below run synchronously in the same tick, so there's no flash of stale content.
   document.getElementById('book-overlay').classList.add('open');
+
+  // Match the manuscript's document-level typography before measuring. Inline
+  // font and size spans remain intact and are accounted for by the paginator too.
+  const bookFont = d.font || "'EB Garamond', serif";
+  const bookFontSize = d.fontSize || '14px';
+  ['book-left-content', 'book-editor'].forEach(id => {
+    const pageContent = document.getElementById(id);
+    pageContent.style.fontFamily = bookFont;
+    pageContent.style.fontSize = bookFontSize;
+  });
 
   const paras = htmlToBookParagraphs(d.content || '');
   bookPages = bookPaginate(paras);
