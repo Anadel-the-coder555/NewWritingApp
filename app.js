@@ -2601,6 +2601,16 @@ function formatterDocuments(project, settings) {
   return project ? (project.docs || []).filter(d => d.section === 'manuscript' && !d.isFolder && (settings.drafts || d.status !== 'draft')) : [];
 }
 
+/* Strips whitespace (regular spaces, tabs, &nbsp;) from the very start of an
+   element's first line of text — used to remove manually-typed paragraph
+   indentation before the formatter applies its own. */
+function stripLeadingIndent(el) {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const node = walker.nextNode();
+  if (!node) return;
+  node.textContent = node.textContent.replace(/^[ \t ]+/, '');
+}
+
 function cleanBookHTML(html) {
   const wrap = document.createElement('div');
   wrap.innerHTML = html || '';
@@ -2617,6 +2627,16 @@ function cleanBookHTML(html) {
       paragraph.innerHTML = node.innerHTML;
       node.replaceWith(paragraph);
     }
+  });
+  // The formatter gives every paragraph its own consistent text-indent via CSS —
+  // any indentation the writer typed by hand (leading spaces, tabs, &nbsp; — never
+  // exactly the same amount twice, since nothing enforced a fixed width) stacks on
+  // top of that instead of being replaced by it, which is exactly why paragraphs
+  // were coming out indented by wildly different amounts instead of the even,
+  // book-typeset look a formatter is supposed to produce.
+  [...wrap.children].forEach(block => {
+    if (block.classList.contains('scene-break') || block.classList.contains('book-scene-break')) return;
+    stripLeadingIndent(block);
   });
   return wrap.innerHTML;
 }
