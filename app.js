@@ -286,8 +286,15 @@ function init() {
   renderMarginNotes();
   updateModeButtons();
   window.addEventListener('beforeunload', () => {
-    saveCurrentDoc();
     saveCharacterView();
+    // saveProjectToArchive() also flushes saveCurrentDoc() and, critically, updates
+    // folio-projects — the archive Book Formatter, Export, and synced-folder writes
+    // all read from. persistState() below only keeps the live in-progress session
+    // in sync (what reopens straight into the editor); without this, closing the
+    // tab or the computer sleeping mid-session left the archive stale, so newly
+    // written chapters would show up fine back in the editor next time but the
+    // Formatter would still be compiling from whatever was archived last.
+    saveProjectToArchive();
     persistState();
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) scanSyncFolder(); });
