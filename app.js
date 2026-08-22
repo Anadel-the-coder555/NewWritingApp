@@ -655,6 +655,30 @@ function fmt(cmd) {
   document.getElementById('editor').focus();
 }
 
+/* Applies one CSS property to a selection fragment by setting it directly on each
+   of the fragment's TOP-LEVEL nodes, instead of wrapping the whole fragment in a
+   single new <span> — a selection spanning full paragraphs extracts actual <p>
+   elements as top-level fragment children, and a <span> (inline-only) can't
+   legally wrap block elements like that without corrupting the document
+   structure (confirmed: selecting a whole multi-paragraph chapter and changing
+   its font size produced `<span><p>…</p><p>…</p></span>` — invalid HTML that the
+   book formatter's paragraph-splitting logic couldn't parse as separate
+   paragraphs, which is what caused it to run off the page and lose most of the
+   text). A bare top-level text node still gets wrapped in a fresh span, since
+   text nodes can't carry a style of their own. */
+function applyStyleToFragmentTopLevel(fragment, styleProp, styleValue) {
+  Array.from(fragment.childNodes).forEach(node => {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      node.style[styleProp] = styleValue;
+    } else if (node.nodeType === Node.TEXT_NODE && node.textContent) {
+      const span = document.createElement('span');
+      span.style[styleProp] = styleValue;
+      node.replaceWith(span);
+      span.appendChild(node);
+    }
+  });
+}
+
 /* Applies a font only to the current selection (e.g. a letter written in another
    character's hand within a chapter). Returns false if there's nothing selected,
    so the caller can fall back to changing the whole document's font. */
@@ -673,14 +697,9 @@ function applySelectionFont(fontValue) {
     if (!el.getAttribute('style')) el.removeAttribute('style');
   });
   fragment.querySelectorAll('span:not([style]):not([class])').forEach(el => el.replaceWith(...el.childNodes));
-  const span = document.createElement('span');
-  span.style.fontFamily = fontValue;
-  span.appendChild(fragment);
-  range.insertNode(span);
-  const caret = document.createRange();
-  caret.selectNodeContents(span);
+  applyStyleToFragmentTopLevel(fragment, 'fontFamily', fontValue);
+  range.insertNode(fragment);
   selection.removeAllRanges();
-  selection.addRange(caret);
   saveCurrentDoc();
   return true;
 }
@@ -923,14 +942,10 @@ function applySelectionFontSize(sizeValue) {
     el.style.removeProperty('font-size');
     if (!el.getAttribute('style')) el.removeAttribute('style');
   });
-  const span = document.createElement('span');
-  span.style.fontSize = sizeValue;
-  span.appendChild(fragment);
-  range.insertNode(span);
-  const selectedRange = document.createRange();
-  selectedRange.selectNodeContents(span);
+  fragment.querySelectorAll('span:not([style]):not([class])').forEach(el => el.replaceWith(...el.childNodes));
+  applyStyleToFragmentTopLevel(fragment, 'fontSize', sizeValue);
+  range.insertNode(fragment);
   selection.removeAllRanges();
-  selection.addRange(selectedRange);
   saveCurrentDoc();
   return true;
 }
