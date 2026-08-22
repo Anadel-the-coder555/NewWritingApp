@@ -2605,22 +2605,27 @@ const FORMATTER_TYPESETTING_PROPS = [
   'text-indent',
   'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
   'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
-  'font-size', 'font-family',
+  'font-size', 'font-family', 'font-weight',
 ];
 
 /* Strips typesetting properties — indent, margin, padding, font size, font
-   family; deliberately NOT bold/italic/underline/color, which are the writer's
-   actual emphasis choices — that either Word/Google Docs/Pages bake into every
-   paragraph on paste, or that a font-size/font selection in the editor embeds
-   directly into that stretch of text. Left in place, either one fights the
-   formatter's own uniform typesetting the same way a pasted hardcoded color used
-   to fight the app's theme: nothing enforces a single consistent value, so
-   paragraphs come out sized and spaced arbitrarily instead of in an even,
-   book-typeset rhythm. A big enough leftover font-size has a second, worse
-   consequence too — a paragraph that can't fit on any single page even on its
-   own falls back to a plain-text word-by-word layout that drops all formatting,
-   which is the "chapter title alone on one page, unformatted text on the next"
-   symptom this was reported as. */
+   family, font weight — that either Word/Google Docs/Pages bake into every
+   paragraph and run on paste, or that a font-size/font selection in the editor
+   embeds directly into that stretch of text. Left in place, any of these fight
+   the formatter's own uniform typesetting the same way a pasted hardcoded color
+   used to fight the app's theme: nothing enforces a single consistent value, so
+   text comes out sized, spaced, and weighted arbitrarily instead of in an even,
+   book-typeset rhythm — font-weight specifically is why bold and regular text
+   could appear to alternate with no relationship to anything the writer actually
+   emphasized: pasted content routinely carries an explicit font-weight on every
+   run (400 here, 700 there) as a side effect of the source app, never as
+   intentional bold. Genuine emphasis the writer actually applied — via Folio's
+   own Bold button, which always produces a real <b> tag — is unaffected, since
+   this only ever touches the "style" attribute, not tag names. A big enough
+   leftover font-size has a second, worse consequence too — a paragraph that
+   can't fit on any single page even on its own falls back to a plain-text
+   word-by-word layout that drops all formatting, which is the "chapter title
+   alone on one page, unformatted text on the next" symptom this was reported as. */
 function stripInlineSpacing(el) {
   [el, ...el.querySelectorAll('[style]')].forEach(node => {
     if (!node.hasAttribute('style')) return;
