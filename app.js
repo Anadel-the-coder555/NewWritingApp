@@ -2721,25 +2721,16 @@ function renderFormatter() {
       let block = original.cloneNode(true);
       current.prose.appendChild(block);
       if (blockIndex === 0 && settings.dropcaps) applyFormatterDropCap(current.prose);
-      if (!overflows(current.page)) return;
-      block.remove();
-      // Always retry on a fresh continuation page, never the same one — a
-      // continuation page has no <h1> eating into its height, so it always has at
-      // least as much room as the page that was just tried, and more than a title
-      // page specifically. The old check only moved on if this page already had
-      // other content on it, which meant a chapter's very first block — with
-      // nothing else on the page yet to trip that condition — could overflow,
-      // retry on the exact same cramped title page, fail identically, and only
-      // then fall into the plain-text word-chunking fallback below, itself still
-      // starting from that same page: the title page ends up completely empty of
-      // body text and the chunked (unformatted) fallback text lands on the next
-      // page instead of the properly-formatted block that should have fit there.
-      current = createPage(chapter, true);
-      block = original.cloneNode(true);
-      current.prose.appendChild(block);
-      if (blockIndex === 0 && settings.dropcaps) applyFormatterDropCap(current.prose);
-      if (!overflows(current.page)) return;
+      if (!overflows(current.page)) return; // whole block fit — done, full formatting kept
 
+      // Doesn't fit whole. Split it right here on THIS page rather than moving the
+      // whole thing to a fresh one — real books routinely run a paragraph across a
+      // page break, filling each page with as much as fits; moving it wholesale
+      // instead left the chapter's title page (or any page a block didn't quite
+      // fit) completely empty of body text, with everything starting on the next
+      // page instead. Word-by-word plain-text chunking only visibly costs inline
+      // formatting for the sliver of text that happens to straddle the exact page
+      // break, which is far better than losing an entire page's worth of layout.
       block.remove();
       const remaining = original.textContent.trim().split(/\s+/).filter(Boolean);
       let needsDropCap = blockIndex === 0 && settings.dropcaps;
