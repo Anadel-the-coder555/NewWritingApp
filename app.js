@@ -2677,7 +2677,18 @@ function renderFormatter() {
       if (blockIndex === 0 && settings.dropcaps) applyFormatterDropCap(current.prose);
       if (!overflows(current.page)) return;
       block.remove();
-      if (current.prose.childNodes.length) current = createPage(chapter, true);
+      // Always retry on a fresh continuation page, never the same one — a
+      // continuation page has no <h1> eating into its height, so it always has at
+      // least as much room as the page that was just tried, and more than a title
+      // page specifically. The old check only moved on if this page already had
+      // other content on it, which meant a chapter's very first block — with
+      // nothing else on the page yet to trip that condition — could overflow,
+      // retry on the exact same cramped title page, fail identically, and only
+      // then fall into the plain-text word-chunking fallback below, itself still
+      // starting from that same page: the title page ends up completely empty of
+      // body text and the chunked (unformatted) fallback text lands on the next
+      // page instead of the properly-formatted block that should have fit there.
+      current = createPage(chapter, true);
       block = original.cloneNode(true);
       current.prose.appendChild(block);
       if (blockIndex === 0 && settings.dropcaps) applyFormatterDropCap(current.prose);
