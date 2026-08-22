@@ -2713,7 +2713,6 @@ function splitBlockPreservingFormatting(original, chapter, pageCtx, createPage, 
   const topTag = original.tagName || 'P';
   let topParagraph = document.createElement(topTag);
   current.prose.appendChild(topParagraph);
-  let target = topParagraph;
   const openChain = []; // inline tag names currently open, outer to inner
   let dropCapPending = Boolean(wantsDropCap);
 
@@ -2723,18 +2722,36 @@ function splitBlockPreservingFormatting(original, chapter, pageCtx, createPage, 
     dropCapPending = false;
   }
 
+  /* The insertion point for whatever gets appended next, derived fresh from
+     topParagraph + openChain every time rather than cached — a cached reference
+     goes stale the instant a page break happens partway through a nested run
+     (bold, italic, …): after finishing that run and returning to its parent
+     level, the naive fix ("restore whatever the target was before entering this
+     tag") points at a wrapper on the OLD page, not the page things have actually
+     advanced to since. Content appended through it then silently lands back on
+     that old page — sometimes back inside that very same now-finished inline
+     wrapper — which is exactly how plain text could end up rendered bold with no
+     visible pattern to it. Deriving the target fresh, every time, from the
+     current page's own topParagraph makes that impossible: there's no stale
+     reference left to restore. */
+  function currentTarget() {
+    let t = topParagraph;
+    openChain.forEach(tagName => {
+      let last = t.lastElementChild;
+      if (!last || last.tagName !== tagName) {
+        last = document.createElement(tagName);
+        t.appendChild(last);
+      }
+      t = last;
+    });
+    return t;
+  }
+
   function newPage() {
     current = createPage(chapter, true);
     pageCtx.current = current;
     topParagraph = document.createElement(topTag);
     current.prose.appendChild(topParagraph);
-    let t = topParagraph;
-    openChain.forEach(tagName => {
-      const wrap = document.createElement(tagName);
-      t.appendChild(wrap);
-      t = wrap;
-    });
-    target = t;
   }
 
   function walkText(node) {
@@ -2742,7 +2759,7 @@ function splitBlockPreservingFormatting(original, chapter, pageCtx, createPage, 
     if (!tokens.length) return;
     let idx = 0;
     let textNode = document.createTextNode('');
-    target.appendChild(textNode);
+    currentTarget().appendChild(textNode);
     let fitted = '';
     while (idx < tokens.length) {
       const attempt = fitted + tokens[idx];
@@ -2753,7 +2770,7 @@ function splitBlockPreservingFormatting(original, chapter, pageCtx, createPage, 
         if (!fitted) textNode.remove();
         newPage();
         textNode = document.createTextNode('');
-        target.appendChild(textNode);
+        currentTarget().appendChild(textNode);
         fitted = '';
         continue; // retry this same token on the fresh page
       }
@@ -2769,13 +2786,9 @@ function splitBlockPreservingFormatting(original, chapter, pageCtx, createPage, 
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
-    const wrap = document.createElement(node.tagName);
-    target.appendChild(wrap);
     openChain.push(node.tagName);
-    const prevTarget = target;
-    target = wrap;
     Array.from(node.childNodes).forEach(walk);
-    target = prevTarget;
+    const wrap = currentTarget();
     openChain.pop();
     if (!wrap.hasChildNodes()) wrap.remove();
   }
