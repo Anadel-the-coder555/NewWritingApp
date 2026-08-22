@@ -2601,26 +2601,30 @@ function formatterDocuments(project, settings) {
   return project ? (project.docs || []).filter(d => d.section === 'manuscript' && !d.isFolder && (settings.drafts || d.status !== 'draft')) : [];
 }
 
-/* Strips whitespace (regular spaces, tabs, &nbsp;) from the very start of an
-   element's first line of text — used to remove manually-typed paragraph
-   indentation before the formatter applies its own. */
-const FORMATTER_SPACING_PROPS = [
+const FORMATTER_TYPESETTING_PROPS = [
   'text-indent',
   'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
   'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+  'font-size', 'font-family',
 ];
 
-/* Strips paragraph-spacing properties specifically (not font, size, bold, color,
-   etc.) that Word/Google Docs/Pages bake into every single paragraph on paste or
-   export — left in place, they fight the formatter's own uniform indent/spacing
-   the exact same way a pasted hardcoded color used to fight the app's theme, and
-   for the same underlying reason: nothing in the source enforced one consistent
-   value, so paragraphs end up indented and spaced by a different, essentially
-   arbitrary amount each instead of an even, book-typeset rhythm. */
+/* Strips typesetting properties — indent, margin, padding, font size, font
+   family; deliberately NOT bold/italic/underline/color, which are the writer's
+   actual emphasis choices — that either Word/Google Docs/Pages bake into every
+   paragraph on paste, or that a font-size/font selection in the editor embeds
+   directly into that stretch of text. Left in place, either one fights the
+   formatter's own uniform typesetting the same way a pasted hardcoded color used
+   to fight the app's theme: nothing enforces a single consistent value, so
+   paragraphs come out sized and spaced arbitrarily instead of in an even,
+   book-typeset rhythm. A big enough leftover font-size has a second, worse
+   consequence too — a paragraph that can't fit on any single page even on its
+   own falls back to a plain-text word-by-word layout that drops all formatting,
+   which is the "chapter title alone on one page, unformatted text on the next"
+   symptom this was reported as. */
 function stripInlineSpacing(el) {
   [el, ...el.querySelectorAll('[style]')].forEach(node => {
     if (!node.hasAttribute('style')) return;
-    FORMATTER_SPACING_PROPS.forEach(prop => node.style.removeProperty(prop));
+    FORMATTER_TYPESETTING_PROPS.forEach(prop => node.style.removeProperty(prop));
     if (!node.getAttribute('style')) node.removeAttribute('style');
   });
 }
@@ -3931,6 +3935,18 @@ document.getElementById('book-left-content').addEventListener('paste', e => {
 ──────────────────────────────────────── */
 const BOOK_CHAPTER_LABEL = () => document.getElementById('doc-title-edit').value || 'Untitled';
 const BOOK_SCENE_BREAK = ' scene-break ';
+const BOOK_PAGE_MAX_WORDS = 320;
+const BOOK_PAGE_MAX_CHARS = 1850;
+
+/* A page must satisfy both the editorial length target and its actual rendered
+   dimensions. The physical check remains essential for larger fonts, dialogue,
+   and unusually wide words, which may fill the page before either count limit. */
+function bookPageFits(measurer) {
+  const text = measurer.innerText || measurer.textContent || '';
+  return measurer.scrollHeight <= measurer.clientHeight + 1 &&
+    wordTokens(text).length <= BOOK_PAGE_MAX_WORDS &&
+    text.length <= BOOK_PAGE_MAX_CHARS;
+}
 
 /* Splits manuscript HTML into paragraph strings, one per top-level block, keeping
    each paragraph's inline formatting (font spans, bold, italic, …) intact so Book
@@ -4017,7 +4033,7 @@ function splitBookParagraphToFit(para, measurer, indent = false) {
 
   const prefixFits = end => {
     measurer.innerHTML = existingMarkup + bookParagraphHTML(bookParagraphSlice(source, 0, end), indent);
-    return measurer.scrollHeight <= measurer.clientHeight + 1;
+    return bookPageFits(measurer);
   };
 
   let low = 0;
@@ -4081,7 +4097,7 @@ function bookPaginate(paras) {
   measurer.style.padding = computed.padding;
   document.body.appendChild(measurer);
 
-  const fits = () => measurer.scrollHeight <= measurer.clientHeight + 1; // +1 guards subpixel rounding
+  const fits = () => bookPageFits(measurer);
 
   const pages = [];
   let currentPage = [];
@@ -4175,7 +4191,7 @@ function scheduleBookOverflowCheck(side) {
   bookOverflowTimer = setTimeout(() => {
     const phone = isPhoneWidth();
     const el = document.getElementById(phone || side === 'right' ? 'book-editor' : 'book-left-content');
-    if (el.scrollHeight <= el.clientHeight + 1) return;
+    if (bookPageFits(el)) return;
 
     if (phone) {
       const previousIndex = bookPhoneIdx;
