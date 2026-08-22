@@ -1224,9 +1224,11 @@ body.focus-mode #focus-exit { display: block; }
   background: var(--dark-2);
   z-index: 500;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
+  align-items: safe center;
+  justify-content: flex-start;
+  overflow: auto;
+  padding: 24px 24px 82px;
+  box-sizing: border-box;
 }
 
 #book-overlay.open { display: flex; }
@@ -1259,7 +1261,8 @@ body.focus-mode #focus-exit { display: block; }
   position: relative;
   z-index: 5;
   perspective: 2000px;
-  margin-top: 10px;
+  margin: auto 0;
+  flex: none;
 }
 
 #book {
@@ -1507,8 +1510,18 @@ body.focus-mode #focus-exit { display: block; }
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-top: 18px;
-  z-index: 10;
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 30;
+  padding: 8px 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--dark-2) 88%, transparent);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+  backdrop-filter: blur(10px);
+  white-space: nowrap;
 }
 
 .book-ctrl-btn {
@@ -2476,7 +2489,7 @@ body.margin-mode #editor-wrap { max-width: 680px; flex: 3 1 480px; }
      Mode to a single-page-at-a-time model (bookPhoneIdx) rendered into the same
      #book-editor element, and this block turns that one page into a full-width
      surface instead of a fixed-width column. */
-  #book-wrap { perspective: none; margin-top: 0; width: 100%; padding: 0 4vw; box-sizing: border-box; }
+  #book-wrap { perspective: none; margin: 0; width: 100%; padding: 0 4vw; box-sizing: border-box; }
   #book { width: 100%; max-width: 440px; height: 82vh; margin: 0 auto; }
   .book-page { position: static; width: 100%; height: 100%; box-shadow: none; }
   .book-page-left { display: none; }
@@ -2486,7 +2499,7 @@ body.margin-mode #editor-wrap { max-width: 680px; flex: 3 1 480px; }
   #book-curl { display: none; }
   #book-flip { display: none !important; }
   .book-page-content, #book-editor { font-size: 16px; line-height: 1.6; }
-  #book-controls { flex-wrap: wrap; justify-content: center; padding: 0 12px; row-gap: 8px; }
+  #book-controls { width: calc(100% - 24px); bottom: 10px; box-sizing: border-box; flex-wrap: wrap; justify-content: center; padding: 8px 12px; gap: 6px 10px; }
 
   /* Book Formatter: fixed 260px control rail + a fixed ≥600px-wide page preview
      left almost nothing of the preview visible and clipped the header buttons
