@@ -40,9 +40,11 @@ const DEFAULT_FONT  = "'Playfair Display', serif";
 ──────────────────────────────────────── */
 const STORAGE_KEY = 'folio-project';
 const EDITOR_ZOOM_KEY = 'folio-editor-zoom';
+const BOOK_ZOOM_KEY = 'folio-book-zoom';
 let persistTimer = null;
 
 let editorZoom = 100;
+let bookZoom = 100;
 
 function setEditorZoom(value, persist = true) {
   editorZoom = Math.max(60, Math.min(160, Math.round(value / 10) * 10));
@@ -58,6 +60,22 @@ function setEditorZoom(value, persist = true) {
   if (zoomOut) zoomOut.disabled = editorZoom <= 60;
   if (zoomIn) zoomIn.disabled = editorZoom >= 160;
   if (persist) localStorage.setItem(EDITOR_ZOOM_KEY, String(editorZoom));
+}
+
+function setBookZoom(value, persist = true) {
+  bookZoom = Math.max(60, Math.min(140, Math.round(value / 10) * 10));
+  const bookWrap = document.getElementById('book-wrap');
+  const readout = document.getElementById('book-zoom-reset');
+  if (bookWrap) bookWrap.style.zoom = `${bookZoom}%`;
+  if (readout) {
+    readout.textContent = `${bookZoom}%`;
+    readout.setAttribute('aria-label', `Reset book zoom to 100%. Current zoom ${bookZoom}%`);
+  }
+  const zoomOut = document.getElementById('book-zoom-out');
+  const zoomIn = document.getElementById('book-zoom-in');
+  if (zoomOut) zoomOut.disabled = bookZoom <= 60;
+  if (zoomIn) zoomIn.disabled = bookZoom >= 140;
+  if (persist) localStorage.setItem(BOOK_ZOOM_KEY, String(bookZoom));
 }
 
 function persistState() {
@@ -247,6 +265,7 @@ function toggleSettingsMenu(force) {
 function init() {
   initTheme();
   setEditorZoom(Number(localStorage.getItem(EDITOR_ZOOM_KEY)) || 100, false);
+  setBookZoom(Number(localStorage.getItem(BOOK_ZOOM_KEY)) || 100, false);
   loadPersistedState();
   ensureUniqueProjectId(); // migrate off the generic 'default' id every install starts with, before anything can compare ids against another device's file
   renderTree();
@@ -3810,6 +3829,9 @@ function setupEventListeners() {
   /* Book Mode listeners — ADD THESE */
   document.getElementById('btn-book').addEventListener('click', openBookMode);
   document.getElementById('book-close').addEventListener('click', closeBookMode);
+  document.getElementById('book-zoom-out').addEventListener('click', () => setBookZoom(bookZoom - 10));
+  document.getElementById('book-zoom-in').addEventListener('click', () => setBookZoom(bookZoom + 10));
+  document.getElementById('book-zoom-reset').addEventListener('click', () => setBookZoom(100));
   document.getElementById('book-next').addEventListener('click', () => { if (isPhoneWidth()) bookPhoneNext(); else bookFlipForward(); });
   document.getElementById('book-prev').addEventListener('click', () => { if (isPhoneWidth()) bookPhonePrev(); else bookFlipBackward(); });
   document.getElementById('book-curl').addEventListener('click', () => { if (isPhoneWidth()) bookPhoneNext(); else bookFlipForward(); });
@@ -3847,7 +3869,6 @@ document.getElementById('book-left-content').addEventListener('paste', e => {
    Book Mode
 ──────────────────────────────────────── */
 const BOOK_CHAPTER_LABEL = () => document.getElementById('doc-title-edit').value || 'Untitled';
-const CHARS_PER_PAGE = 2800; // Adjust as needed for page length
 const BOOK_SCENE_BREAK = ' scene-break ';
 
 /* Splits manuscript HTML into paragraph strings, one per top-level block, keeping
@@ -3894,8 +3915,64 @@ function bookSerializePage(el) {
 
 /* Visible character count of a paragraph, ignoring markup — used to keep pagination
    based on actual prose length instead of counting style-attribute characters. */
-function bookVisibleLength(para) {
-  return para === BOOK_SCENE_BREAK ? 5 : para.replace(/<[^>]+>/g, '').length;
+/* Paginates paragraphs by actually rendering them into a hidden measuring element
+   sized exactly like the real page's content area, and checking precisely when
+   that overflows — rather than guessing a fixed character budget per page. A raw
+   character count has no idea how much vertical space a paragraph actually takes:
+   short, dialogue-heavy paragraphs with lots of line breaks eat far more room per
+   character than dense prose does, so a fixed budget can let a page's worth of
+   text run well past what actually fits, silently clipped by the page's
+   overflow:hidden while the next page sits empty. Measuring against a clone of the
+   live #book-editor means this automatically matches whatever's actually on
+   screen — the desktop two-page spread's dimensions, or the phone single-page
+   layout's, whichever is currently active — with no separate figure to keep in
+   sync by hand. */
+function bookPaginate(paras) {
+  const reference = document.getElementById('book-editor');
+  const computed = getComputedStyle(reference);
+  const width = reference.clientWidth;
+  const height = reference.clientHeight;
+
+  const measurer = document.createElement('div');
+  measurer.style.position = 'fixed';
+  measurer.style.visibility = 'hidden';
+  measurer.style.pointerEvents = 'none';
+  measurer.style.top = '0';
+  measurer.style.left = '-9999px';
+  measurer.style.width = `${width}px`;
+  measurer.style.height = `${height}px`;
+  measurer.style.overflow = 'hidden';
+  measurer.style.boxSizing = computed.boxSizing;
+  measurer.style.fontFamily = computed.fontFamily;
+  measurer.style.fontSize = computed.fontSize;
+  measurer.style.fontWeight = computed.fontWeight;
+  measurer.style.lineHeight = computed.lineHeight;
+  measurer.style.letterSpacing = computed.letterSpacing;
+  measurer.style.padding = computed.padding;
+  document.body.appendChild(measurer);
+
+  const fits = () => measurer.scrollHeight <= measurer.clientHeight + 1; // +1 guards subpixel rounding
+
+  const pages = [];
+  let currentPage = [];
+
+  paras.forEach(para => {
+    measurer.insertAdjacentHTML('beforeend', bookParagraphHTML(para, currentPage.length !== 0));
+    if (!fits() && currentPage.length > 0) {
+      // This paragraph is what pushed it over — back it out, close the page here,
+      // and start the next one with it instead.
+      measurer.lastElementChild.remove();
+      pages.push(currentPage);
+      currentPage = [];
+      measurer.innerHTML = '';
+      measurer.insertAdjacentHTML('beforeend', bookParagraphHTML(para, false));
+    }
+    currentPage.push(para);
+  });
+
+  if (currentPage.length > 0) pages.push(currentPage);
+  measurer.remove();
+  return pages;
 }
 
 function bookParagraphHTML(para, indent) {
@@ -3945,31 +4022,20 @@ function openBookMode() {
   const d = docs.find(x => x.id === activeId);
   if (!d) return;
 
+  // Opened before pagination runs, not after — bookPaginate() measures against the
+  // live #book-editor's real rendered width/height, which reads as zero while the
+  // overlay is still display:none. Nothing paints in between: the render calls
+  // below run synchronously in the same tick, so there's no flash of stale content.
+  document.getElementById('book-overlay').classList.add('open');
+
   const paras = htmlToBookParagraphs(d.content || '');
-  bookPages = [];
-  let currentPage = [];
-  let currentLen  = 0;
-
-  paras.forEach(para => {
-    const len = bookVisibleLength(para);
-    if (currentLen + len > CHARS_PER_PAGE && currentPage.length > 0) {
-      bookPages.push(currentPage);
-      currentPage = [];
-      currentLen  = 0;
-    }
-    currentPage.push(para);
-    currentLen += len;
-  });
-
-  if (currentPage.length > 0) bookPages.push(currentPage);
-
-  while (bookPages.length < 2) bookPages.push([]);
+  bookPages = bookPaginate(paras);
+  while (bookPages.length < 2) bookPages.push([]); // the desktop spread always needs a left+right pair
 
   bookSpread   = -1;
   bookPhoneIdx = -1;
   bookFlipping = false;
 
-  document.getElementById('book-overlay').classList.add('open');
   if (isPhoneWidth()) bookRenderPhonePage(); else bookRenderSpread();
 }
 
@@ -4118,32 +4184,8 @@ function bookPhonePrev() {
    instead of from a spread's left/right index. */
 function bookPhoneResplit() {
   bookPhoneSaveCurrentPage();
-
-  const paras    = bookPages.slice(bookPhoneIdx).flat();
-  const totalLen = paras.reduce((sum, p) => sum + bookVisibleLength(p), 0);
-
-  if (totalLen <= CHARS_PER_PAGE) {
-    bookRenderPhonePage();
-    return;
-  }
-
-  const newPages = [];
-  let currentPage = [];
-  let currentLen  = 0;
-
-  paras.forEach(para => {
-    const len = bookVisibleLength(para);
-    if (currentLen + len > CHARS_PER_PAGE && currentPage.length > 0) {
-      newPages.push(currentPage);
-      currentPage = [];
-      currentLen  = 0;
-    }
-    currentPage.push(para);
-    currentLen += len;
-  });
-
-  if (currentPage.length > 0) newPages.push(currentPage);
-
+  const paras = bookPages.slice(bookPhoneIdx).flat();
+  const newPages = bookPaginate(paras);
   bookPages.splice(bookPhoneIdx, bookPages.length - bookPhoneIdx, ...newPages);
   bookRenderPhonePage();
 }
@@ -4174,30 +4216,7 @@ function bookReSplitCurrentPage(side) {
   const idx      = side === 'left' ? leftIdx : rightIdx;
 
   const paras = bookPages.slice(idx).flat();
-  const totalLen = paras.reduce((sum, p) => sum + bookVisibleLength(p), 0);
-
-  if (totalLen <= CHARS_PER_PAGE) {
-    bookRenderSpread();
-    return;
-  }
-
-  // Resplit those paragraphs into pages
-  const newPages = [];
-  let currentPage = [];
-  let currentLen  = 0;
-
-  paras.forEach(para => {
-    const len = bookVisibleLength(para);
-    if (currentLen + len > CHARS_PER_PAGE && currentPage.length > 0) {
-      newPages.push(currentPage);
-      currentPage = [];
-      currentLen  = 0;
-    }
-    currentPage.push(para);
-    currentLen += len;
-  });
-
-  if (currentPage.length > 0) newPages.push(currentPage);
+  const newPages = bookPaginate(paras);
 
   // Replace from the pasted page onward with the newly split pages
   bookPages.splice(idx, bookPages.length - idx, ...newPages);

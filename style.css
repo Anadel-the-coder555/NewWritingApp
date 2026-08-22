@@ -1526,6 +1526,10 @@ body.focus-mode #focus-exit { display: block; }
 }
 
 .book-ctrl-btn:hover { background: rgba(255,255,255,0.1); color: var(--selection); }
+.book-ctrl-btn:disabled { opacity: 0.35; cursor: default; }
+.book-zoom-controls { display: flex; align-items: center; gap: 4px; }
+.book-zoom-btn { width: 28px; padding-inline: 0; font-size: 14px; }
+.book-zoom-level { min-width: 52px; padding-inline: 8px; font-variant-numeric: tabular-nums; }
 
 #book-spread-label {
   font-family: 'DM Mono', monospace;
