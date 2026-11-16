@@ -2601,3 +2601,23 @@ body.margin-mode #editor-wrap { max-width: 680px; flex: 3 1 480px; }
   opacity: 1;
   transform: translateY(0);
 }
+
+/* Placeholder that holds the spot while an audio file is being transcribed */
+.folio-transcribing {
+  display: inline-block;
+  margin: 0 2px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent-text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.78em;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+  user-select: none;
+  vertical-align: 0.1em;
+  animation: folio-transcribing-pulse 1.6s ease-in-out infinite;
+}
+@keyframes folio-transcribing-pulse { 50% { opacity: 0.55; } }

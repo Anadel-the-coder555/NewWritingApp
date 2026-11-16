@@ -146,6 +146,9 @@
       <div class="fmt-sep"></div>
       <button class="fmt-btn" title="Align Left" data-cmd="justifyLeft">⇐</button>
       <button class="fmt-btn" title="Align Center" data-cmd="justifyCenter">↔</button>
+      <div class="fmt-sep"></div>
+      <button class="fmt-btn" id="fmt-audio" title="Transcribe an audio file into the story at the cursor (or drop an audio file onto the page)" aria-label="Transcribe audio at cursor"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg></button>
+      <input type="file" id="audio-file-input" accept="audio/*,video/*,.wav,.m4a,.mp3,.ogg,.opus,.flac,.aac,.webm,.mp4,.mov" multiple hidden>
       <div class="tb-spacer"></div>
       <div class="editor-zoom-controls" role="group" aria-label="Editor page zoom">
         <button class="toolbar-text-btn zoom-btn" id="editor-zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
@@ -674,6 +677,7 @@
 
 <script src="html2canvas.min.js"></script>
 <script src="jspdf.umd.min.js"></script>
+<script src="transcribe.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

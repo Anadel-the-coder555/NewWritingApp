@@ -409,6 +409,7 @@ function loadDoc(id) {
 
   document.getElementById('doc-title-edit').value = d.title;
   document.getElementById('editor').innerHTML      = d.content || '';
+  removeStaleTranscriptionMarks(document.getElementById('editor'));
   prepareAnnotationMarks();
   document.getElementById('editor').style.fontFamily = d.font || DEFAULT_FONT;
   document.getElementById('fmt-font').value         = d.font || DEFAULT_FONT;
@@ -4157,9 +4158,213 @@ function showFolioToast(message) {
 }
 
 /* ────────────────────────────────────────
+   Transcribe audio into the story
+   The microphone button (or dropping an audio file on the page) transcribes the
+   file with transcribe.js and puts the text where the cursor was. While it works,
+   a small "Transcribing…" marker holds that spot, so you can keep writing (or even
+   switch documents) and the text still lands in the right place.
+──────────────────────────────────────── */
+const activeTranscriptions = new Set();
+let nextTranscriptionId = 1;
+let audioInsertRange = null;
+
+function rememberAudioInsertPoint() {
+  const editor = document.getElementById('editor');
+  const selection = window.getSelection();
+  if (selection?.rangeCount) {
+    const range = selection.getRangeAt(0);
+    if (editor.contains(range.startContainer) && editor.contains(range.endContainer)) {
+      audioInsertRange = range.cloneRange();
+      return;
+    }
+  }
+  audioInsertRange = null;
+}
+
+/* A marker left behind by a transcription that is no longer running (Folio was
+   closed mid-way) would otherwise sit in the story forever. */
+function removeStaleTranscriptionMarks(root) {
+  root.querySelectorAll('.folio-transcribing').forEach(mark => {
+    if (!activeTranscriptions.has(mark.dataset.tid)) mark.remove();
+  });
+}
+
+function placeTranscriptionMark(range, fileName) {
+  const editor = document.getElementById('editor');
+  const mark = document.createElement('span');
+  mark.className = 'folio-transcribing';
+  mark.contentEditable = 'false';
+  mark.dataset.tid = String(nextTranscriptionId++);
+  mark.dataset.label = fileName;
+  mark.textContent = `Transcribing ${fileName}…`;
+
+  if (range && editor.contains(range.startContainer)) {
+    range = range.cloneRange();
+    range.collapse(false); // never replace selected text; insert after it
+  } else {
+    // No cursor in the story: add to the end.
+    range = document.createRange();
+    const last = editor.lastElementChild;
+    if (last && /^(P|H1|H2|H3|BLOCKQUOTE|DIV)$/.test(last.tagName) && !last.classList.contains('scene-break')) {
+      range.selectNodeContents(last);
+      range.collapse(false);
+    } else {
+      const p = document.createElement('p');
+      editor.appendChild(p);
+      range.selectNodeContents(p);
+    }
+  }
+
+  // Keep #editor a flat list of blocks: a marker at the top level gets its own paragraph.
+  if (range.startContainer === editor) {
+    const p = document.createElement('p');
+    p.appendChild(mark);
+    range.insertNode(p);
+  } else {
+    range.insertNode(mark);
+  }
+  // An empty paragraph's placeholder <br> would push the marker onto its own line.
+  const block = mark.parentElement;
+  if (block && block.lastChild?.nodeName === 'BR' && block.childNodes.length === 2) block.lastChild.remove();
+
+  const after = document.createRange();
+  after.setStartAfter(mark);
+  after.collapse(true);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(after);
+  editor.dispatchEvent(new Event('input', { bubbles: true }));
+  return mark;
+}
+
+/* Swap the marker for the transcript. Returns false if the marker is gone. */
+function replaceTranscriptionMark(mark, text) {
+  if (!mark.isConnected) return false;
+  const prev = mark.previousSibling, next = mark.nextSibling;
+  const prevText = prev && prev.nodeType === Node.TEXT_NODE ? prev.textContent : (prev ? prev.textContent : '');
+  const nextText = next && next.nodeType === Node.TEXT_NODE ? next.textContent : (next ? next.textContent : '');
+  let out = text;
+  // Mid-sentence (after a comma, a word…): Whisper's leading capital doesn't belong.
+  if (prevText.trim() && !/[.!?…:"“]\s*$/.test(prevText) && /^[A-Z][a-z]/.test(out) && !/^I\b/.test(out)) {
+    out = out[0].toLowerCase() + out.slice(1);
+  }
+  if (prevText && !/\s$/.test(prevText)) out = ' ' + out;
+  if (nextText && !/^[\s.,;:!?)\]”’]/.test(nextText)) out = out + ' ';
+  mark.replaceWith(document.createTextNode(out));
+  return true;
+}
+
+function finishTranscription(tid, text) {
+  const editor = document.getElementById('editor');
+  const live = editor.querySelector(`.folio-transcribing[data-tid="${tid}"]`);
+  if (live) {
+    if (text) replaceTranscriptionMark(live, text); else live.remove();
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  }
+  // You moved to another document: put it into that document's saved text.
+  for (const d of docs) {
+    if (!d.content || !d.content.includes(`data-tid="${tid}"`)) continue;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = d.content;
+    const mark = wrap.querySelector(`.folio-transcribing[data-tid="${tid}"]`);
+    if (!mark) continue;
+    if (text) replaceTranscriptionMark(mark, text); else mark.remove();
+    d.content = wrap.innerHTML;
+    schedulePersist();
+    renderTree();
+    return true;
+  }
+  return false;
+}
+
+async function transcribeAudioIntoStory(file, range) {
+  if (!window.FolioTranscribe) { alert('The transcriber did not load.'); return; }
+  if (!window.FolioTranscribe.isAudioFile(file)) {
+    showFolioToast(`“${file.name}” doesn’t look like an audio file.`);
+    return;
+  }
+  const mark = placeTranscriptionMark(range, file.name);
+  const tid = mark.dataset.tid;
+  activeTranscriptions.add(tid);
+  const update = (message, pct) => {
+    const current = document.querySelector(`#editor .folio-transcribing[data-tid="${tid}"]`);
+    if (!current) return;
+    // Show the overall percentage; drop any per-step number the message carries.
+    const label = message.replace(/\s*\d+%$/, '').replace(/…$/, '');
+    current.textContent = typeof pct === 'number' ? `${label}… ${Math.round(pct)}%` : `${label}…`;
+    current.title = file.name;
+  };
+  try {
+    const text = (await window.FolioTranscribe.transcribeFile(file, update)).trim();
+    if (!text) {
+      finishTranscription(tid, '');
+      showFolioToast(`No speech was found in “${file.name}”.`);
+    } else if (finishTranscription(tid, text)) {
+      showFolioToast(`Transcribed “${file.name}” — ${text.split(/\s+/).length} words added.`);
+    } else {
+      // The marker was deleted while it worked; don't lose the text.
+      try { await navigator.clipboard.writeText(text); } catch { /* ignore */ }
+      showFolioToast(`Transcript of “${file.name}” is ready, but its spot in the story was removed — it’s been copied to your clipboard.`);
+    }
+  } catch (err) {
+    console.warn('Transcription failed:', err);
+    finishTranscription(tid, '');
+    showFolioToast(`Couldn’t transcribe “${file.name}”: ${err.message}`);
+  } finally {
+    activeTranscriptions.delete(tid);
+  }
+}
+
+function setupAudioTranscription() {
+  const btn = document.getElementById('fmt-audio');
+  const input = document.getElementById('audio-file-input');
+  // Grab the cursor before the click moves focus out of the editor.
+  btn.addEventListener('pointerdown', rememberAudioInsertPoint);
+  btn.addEventListener('keydown', rememberAudioInsertPoint);
+  btn.addEventListener('click', () => {
+    input.value = '';
+    input.click();
+  });
+  input.addEventListener('change', () => {
+    const files = Array.from(input.files || []);
+    let range = audioInsertRange;
+    audioInsertRange = null;
+    files.forEach(file => {
+      transcribeAudioIntoStory(file, range);
+      range = null; // further files follow the first one's marker via the caret
+      const sel = window.getSelection();
+      if (sel?.rangeCount) range = sel.getRangeAt(0).cloneRange();
+    });
+  });
+
+  // Drop an audio file onto the page: the text goes where you dropped it.
+  const editor = document.getElementById('editor');
+  const hasFiles = e => Array.from(e.dataTransfer?.types || []).includes('Files');
+  editor.addEventListener('dragover', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  editor.addEventListener('drop', e => {
+    const files = Array.from(e.dataTransfer?.files || []).filter(f => window.FolioTranscribe?.isAudioFile(f));
+    if (!files.length) return;
+    e.preventDefault();
+    let range = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : null;
+    files.forEach(file => {
+      transcribeAudioIntoStory(file, range);
+      const sel = window.getSelection();
+      range = sel?.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    });
+  });
+}
+
+/* ────────────────────────────────────────
    Event Listeners
 ──────────────────────────────────────── */
 function setupEventListeners() {
+
+  setupAudioTranscription();
 
   document.getElementById('editor-zoom-out').addEventListener('click', () => setEditorZoom(editorZoom - 10));
   document.getElementById('editor-zoom-in').addEventListener('click', () => setEditorZoom(editorZoom + 10));
