@@ -133,7 +133,7 @@ function loadPersistedState() {
    nothing saved yet uses the defaults (Sage, light, smooth, no background). */
 const APPEARANCE_PREFIX = 'folio-appearance:';
 const APPEARANCE_MIGRATED_KEY = 'folio-appearance-per-project';
-const APPEARANCE_DEFAULTS = { mode: 'light', theme: 'sage', paletteColor: '', accent: '', texture: 'none' };
+const APPEARANCE_DEFAULTS = { mode: 'light', theme: 'sage', paletteColor: '', accent: '', texture: 'none', pageWidth: 740, pageOpacity: null };
 // Before appearance was per project it lived in these app-wide keys; read once to migrate.
 const LEGACY_APPEARANCE_KEYS = { theme: 'folio-theme-mode', accent: 'folio-accent-color', paletteColor: 'folio-palette-color', mode: 'folio-color-mode', texture: 'folio-page-texture' };
 const PALETTE_ACCENTS = { sage: '#5f7355', slate: '#4a6fa5', sepia: '#a1662f', rose: '#a24a68', ocean: '#1f7a8c', midnight: '#6fa8dc' };
@@ -287,6 +287,43 @@ function loadProjectAppearance() {
   currentPalette = appearance.theme === 'custom' && appearance.paletteColor ? 'custom' : (PALETTE_ACCENTS[appearance.theme] ? appearance.theme : 'sage');
   applyTexture(appearance.texture, false);
   refreshPalette();
+  applyPageLayout();
+}
+
+/* Page width and opacity (per project). Opacity left unset means "automatic":
+   a solid page normally, or the softer glass look over a background picture. */
+function effectivePageOpacity() {
+  if (appearance.pageOpacity != null) return appearance.pageOpacity;
+  return bgActive ? bgSettings.clarity : 100;
+}
+
+function applyPageLayout() {
+  const root = document.documentElement.style;
+  const width = Number(appearance.pageWidth) || APPEARANCE_DEFAULTS.pageWidth;
+  const opacity = effectivePageOpacity();
+  root.setProperty('--page-width', `${width}px`);
+  root.setProperty('--page-opacity', `${opacity}%`);
+  const w = document.getElementById('page-width');
+  if (!w) return;
+  w.value = width;
+  document.getElementById('page-width-out').textContent = width;
+  document.getElementById('page-opacity').value = opacity;
+  document.getElementById('page-opacity-out').textContent = `${opacity}%`;
+}
+
+function bindPageControls() {
+  document.getElementById('page-width').addEventListener('input', e => {
+    saveAppearance({ pageWidth: Number(e.target.value) });
+    applyPageLayout();
+  });
+  document.getElementById('page-opacity').addEventListener('input', e => {
+    saveAppearance({ pageOpacity: Number(e.target.value) });
+    applyPageLayout();
+  });
+  document.getElementById('page-reset-btn').addEventListener('click', () => {
+    saveAppearance({ pageWidth: APPEARANCE_DEFAULTS.pageWidth, pageOpacity: null });
+    applyPageLayout();
+  });
 }
 
 /* Call whenever a different project becomes the open one. */
@@ -502,14 +539,14 @@ function applyBackground() {
     root.setAttribute('data-bg', 'image');
     root.style.setProperty('--bg-image', `url("${bgObjectUrl}")`);
     root.style.setProperty('--bg-blur', `${bgSettings.blur}px`);
-    root.style.setProperty('--bg-clarity', `${bgSettings.clarity}%`);
     root.style.setProperty('--bg-dim', String(bgSettings.dim / 100));
   } else {
     root.removeAttribute('data-bg');
-    ['--bg-image', '--bg-blur', '--bg-clarity', '--bg-dim'].forEach(p => root.style.removeProperty(p));
+    ['--bg-image', '--bg-blur', '--bg-dim'].forEach(p => root.style.removeProperty(p));
   }
   refreshPalette();
   syncBackgroundUI();
+  applyPageLayout();
 }
 
 function syncBackgroundUI() {
@@ -521,7 +558,7 @@ function syncBackgroundUI() {
   if (!bgActive) return;
   document.getElementById('bg-thumb').src = bgObjectUrl || '';
   document.getElementById('bg-name').textContent = bgSettings.name || 'Background image';
-  [['blur', 'px'], ['clarity', '%'], ['dim', '%']].forEach(([key, unit]) => {
+  [['blur', 'px'], ['dim', '%']].forEach(([key, unit]) => {
     document.getElementById(`bg-${key}`).value = bgSettings[key];
     document.getElementById(`bg-${key}-out`).textContent = bgSettings[key] + (unit === 'px' ? '' : unit);
   });
@@ -609,7 +646,7 @@ function bindBackgroundControls() {
     if (file) setBackgroundFromFile(file);
     else alert("That didn't come through as a picture. Try saving it to your Mac first, then drop the file here.");
   });
-  ['blur', 'clarity', 'dim'].forEach(key => {
+  ['blur', 'dim'].forEach(key => {
     document.getElementById(`bg-${key}`).addEventListener('input', e => {
       bgSettings[key] = Number(e.target.value);
       saveBackgroundSettings();
@@ -2991,7 +3028,16 @@ function isPhoneWidth() {
   return window.matchMedia('(max-width: 640px)').matches;
 }
 
+function syncPanelToggles() {
+  const pairs = [['toggle-sidebar', 'sidebar-collapsed'], ['toggle-inspector', 'inspector-collapsed']];
+  pairs.forEach(([id, cls]) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.setAttribute('aria-pressed', String(!document.body.classList.contains(cls)));
+  });
+}
+
 function toggleSidebar(open) {
+  if (typeof open !== 'boolean') open = document.body.classList.contains('sidebar-collapsed');
   document.body.classList.toggle('sidebar-collapsed', !open);
   localStorage.setItem('folio-sidebar-open', String(open));
   // On a phone-width screen the sidebar and inspector are both full fixed-width
@@ -3001,15 +3047,18 @@ function toggleSidebar(open) {
     document.body.classList.add('inspector-collapsed');
     localStorage.setItem('folio-inspector-open', 'false');
   }
+  syncPanelToggles();
 }
 
 function toggleInspector(open) {
+  if (typeof open !== 'boolean') open = document.body.classList.contains('inspector-collapsed');
   document.body.classList.toggle('inspector-collapsed', !open);
   localStorage.setItem('folio-inspector-open', String(open));
   if (open && isPhoneWidth()) {
     document.body.classList.add('sidebar-collapsed');
     localStorage.setItem('folio-sidebar-open', 'false');
   }
+  syncPanelToggles();
 }
 
 function showInspectorPanel(name) {
@@ -5515,10 +5564,9 @@ function setupEventListeners() {
   document.getElementById('btn-bible').addEventListener('click', () => setMode('bible'));
 
   /* Collapsible panels and inspector tabs */
-  document.getElementById('sidebar-collapse').addEventListener('click', () => toggleSidebar(false));
-  document.getElementById('sidebar-expand').addEventListener('click', () => toggleSidebar(true));
-  document.getElementById('inspector-collapse').addEventListener('click', () => toggleInspector(false));
-  document.getElementById('inspector-expand').addEventListener('click', () => toggleInspector(true));
+  document.getElementById('toggle-sidebar').addEventListener('click', () => toggleSidebar());
+  document.getElementById('toggle-inspector').addEventListener('click', () => toggleInspector());
+  bindPageControls();
   document.querySelectorAll('.inspector-tab').forEach(btn => btn.addEventListener('click', () => showInspectorPanel(btn.dataset.panel)));
   /* Primary navigation and synopsis start visible on desktop; on a phone-width screen
      the sidebar and inspector are fixed-width columns that would otherwise squeeze the
@@ -5709,6 +5757,7 @@ function setupEventListeners() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') { e.preventDefault(); toggleProofing(); }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); openCompile(); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); takeSnapshot(); }
+    if ((e.ctrlKey || e.metaKey) && e.code === 'Backslash') { e.preventDefault(); e.shiftKey ? toggleInspector() : toggleSidebar(); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
       e.preventDefault();
       openSearch();
