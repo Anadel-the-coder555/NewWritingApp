@@ -127,15 +127,35 @@ function loadPersistedState() {
 /* ────────────────────────────────────────
    Init
 ──────────────────────────────────────── */
-/* Appearance / theme settings */
-const THEME_KEY = 'folio-theme-mode';
-const ACCENT_KEY = 'folio-accent-color';
-const PALETTE_COLOR_KEY = 'folio-palette-color';
-const MODE_KEY = 'folio-color-mode';
-const TEXTURE_KEY = 'folio-page-texture';
+/* ── Appearance (per project) ──
+   Light/dark, palette, favorite accent, page texture and the background image all
+   belong to the project that's open: each novel keeps its own look. A project with
+   nothing saved yet uses the defaults (Sage, light, smooth, no background). */
+const APPEARANCE_PREFIX = 'folio-appearance:';
+const APPEARANCE_MIGRATED_KEY = 'folio-appearance-per-project';
+const APPEARANCE_DEFAULTS = { mode: 'light', theme: 'sage', paletteColor: '', accent: '', texture: 'none' };
+// Before appearance was per project it lived in these app-wide keys; read once to migrate.
+const LEGACY_APPEARANCE_KEYS = { theme: 'folio-theme-mode', accent: 'folio-accent-color', paletteColor: 'folio-palette-color', mode: 'folio-color-mode', texture: 'folio-page-texture' };
 const PALETTE_ACCENTS = { sage: '#5f7355', slate: '#4a6fa5', sepia: '#a1662f', rose: '#a24a68', ocean: '#1f7a8c', midnight: '#6fa8dc' };
+let appearance = { ...APPEARANCE_DEFAULTS };
 let currentPalette = 'sage';
 let colorMode = 'light';
+
+function readAppearance(id) {
+  try {
+    const raw = localStorage.getItem(APPEARANCE_PREFIX + id);
+    return raw ? { ...APPEARANCE_DEFAULTS, ...JSON.parse(raw) } : null;
+  } catch (e) { return null; }
+}
+
+function writeAppearance(id, value) {
+  try { localStorage.setItem(APPEARANCE_PREFIX + id, JSON.stringify(value)); } catch (e) { /* ignore */ }
+}
+
+function saveAppearance(patch) {
+  Object.assign(appearance, patch);
+  writeAppearance(currentProjectId, appearance);
+}
 
 function updateActiveSwatch(themeId) {
   document.querySelectorAll('.theme-swatch[data-theme]').forEach(btn => btn.classList.toggle('active', btn.dataset.theme === themeId));
@@ -147,7 +167,7 @@ function applyTexture(id, persist = true) {
   const texture = id && id !== 'none' ? id : '';
   if (texture) document.documentElement.setAttribute('data-texture', texture);
   else document.documentElement.removeAttribute('data-texture');
-  if (persist) localStorage.setItem(TEXTURE_KEY, texture || 'none');
+  if (persist) saveAppearance({ texture: texture || 'none' });
   document.querySelectorAll('.texture-swatch[data-texture]').forEach(btn => btn.classList.toggle('active', btn.dataset.texture === (texture || 'none')));
 }
 
@@ -190,7 +210,7 @@ function applyAccentColor(hex, persist = true, dark = colorMode === 'dark') {
   const root = document.documentElement.style;
   if (!hex) {
     ['--color-accent', '--color-accent-100', '--color-accent-200', '--color-accent-400', '--color-accent-600', '--color-accent-700', '--color-accent-800'].forEach(p => root.removeProperty(p));
-    if (persist) localStorage.removeItem(ACCENT_KEY);
+    if (persist) saveAppearance({ accent: '' });
   } else {
     const toward = (c, pct) => `color-mix(in srgb, ${hex} ${pct}%, ${c})`;
     root.setProperty('--color-accent', hex);
@@ -200,9 +220,10 @@ function applyAccentColor(hex, persist = true, dark = colorMode === 'dark') {
     root.setProperty('--color-accent-600', hex);
     root.setProperty('--color-accent-700', dark ? toward('white', 65) : toward('black', 78));
     root.setProperty('--color-accent-800', dark ? toward('white', 80) : toward('black', 62));
-    if (persist) localStorage.setItem(ACCENT_KEY, hex);
+    if (persist) saveAppearance({ accent: hex });
   }
-  const shown = hex || PALETTE_ACCENTS[document.documentElement.getAttribute('data-theme') || currentPalette] || PALETTE_ACCENTS.sage;
+  const shownPalette = document.documentElement.getAttribute('data-theme') || currentPalette;
+  const shown = hex || (shownPalette === 'custom' ? appearance.paletteColor : PALETTE_ACCENTS[shownPalette]) || PALETTE_ACCENTS.sage;
   const swatch = document.querySelector('.accent-color-swatch');
   const picker = document.getElementById('accent-color-picker');
   if (swatch) swatch.style.background = shown;
@@ -213,11 +234,11 @@ function applyAccentColor(hex, persist = true, dark = colorMode === 'dark') {
 function refreshPalette() {
   // A background set to "match palette" borrows a palette without changing the saved one.
   const palette = (bgActive && bgSettings.match && bgSettings.palette) || currentPalette;
-  const hex = palette === 'custom' ? (localStorage.getItem(PALETTE_COLOR_KEY) || '#8a5fd6') : (PALETTE_ACCENTS[palette] || PALETTE_ACCENTS.sage);
+  const hex = palette === 'custom' ? (appearance.paletteColor || '#8a5fd6') : (PALETTE_ACCENTS[palette] || PALETTE_ACCENTS.sage);
   generateScheme(hex, colorMode === 'dark');
   document.documentElement.setAttribute('data-theme', palette);
   updateActiveSwatch(palette);
-  applyAccentColor(localStorage.getItem(ACCENT_KEY), false);
+  applyAccentColor(appearance.accent || null, false);
 }
 
 /* Picking a palette by hand while a background is matching means "use this one instead". */
@@ -231,54 +252,182 @@ function stopBackgroundMatch() {
 function applyTheme(id) {
   stopBackgroundMatch();
   currentPalette = (id && PALETTE_ACCENTS[id]) ? id : 'sage';
-  localStorage.setItem(THEME_KEY, currentPalette);
+  saveAppearance({ theme: currentPalette });
   refreshPalette();
 }
 
-function applyCustomPalette(hex, persist = true) {
-  if (persist) stopBackgroundMatch();
-  currentPalette = 'custom';
-  if (persist) { localStorage.setItem(THEME_KEY, 'custom'); localStorage.setItem(PALETTE_COLOR_KEY, hex); }
+function showCustomPaletteColor(hex) {
   const dot = document.getElementById('custom-swatch-dot');
   const picker = document.getElementById('custom-theme-picker');
-  if (dot) dot.style.background = hex;
-  if (picker) picker.value = hex;
+  if (dot) dot.style.background = hex || '';
+  if (picker) picker.value = hex || '#8a5fd6';
+}
+
+function applyCustomPalette(hex) {
+  stopBackgroundMatch();
+  currentPalette = 'custom';
+  saveAppearance({ theme: 'custom', paletteColor: hex });
+  showCustomPaletteColor(hex);
   refreshPalette();
 }
 
-function setColorMode(mode, persist = true) {
+function setColorMode(mode) {
   colorMode = mode === 'dark' ? 'dark' : 'light';
-  if (persist) localStorage.setItem(MODE_KEY, colorMode);
+  saveAppearance({ mode: colorMode });
   document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === colorMode));
   refreshPalette();
 }
 
-function initTheme() {
-  colorMode = localStorage.getItem(MODE_KEY) === 'dark' ? 'dark' : 'light';
+/* Shows the open project's saved look (or the defaults) without saving anything. */
+function loadProjectAppearance() {
+  appearance = readAppearance(currentProjectId) || { ...APPEARANCE_DEFAULTS };
+  colorMode = appearance.mode === 'dark' ? 'dark' : 'light';
   document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === colorMode));
-  const savedPaletteColor = localStorage.getItem(PALETTE_COLOR_KEY) || '';
-  if (savedPaletteColor) {
-    const dot = document.getElementById('custom-swatch-dot');
-    const picker = document.getElementById('custom-theme-picker');
-    if (dot) dot.style.background = savedPaletteColor;
-    if (picker) picker.value = savedPaletteColor;
-  }
-  const savedTheme = localStorage.getItem(THEME_KEY) || 'sage';
-  if (savedTheme === 'custom' && savedPaletteColor) applyCustomPalette(savedPaletteColor, false);
-  else applyTheme(savedTheme);
-  applyTexture(localStorage.getItem(TEXTURE_KEY) || 'none', false);
+  showCustomPaletteColor(appearance.paletteColor);
+  currentPalette = appearance.theme === 'custom' && appearance.paletteColor ? 'custom' : (PALETTE_ACCENTS[appearance.theme] ? appearance.theme : 'sage');
+  applyTexture(appearance.texture, false);
+  refreshPalette();
 }
 
-/* ── Custom background image ──
-   The image lives in IndexedDB (too large for localStorage); its settings in localStorage.
-   With no image saved, html[data-bg] is absent and the palette's own backdrop shows. */
-const BG_SETTINGS_KEY = 'folio-background';
+/* Call whenever a different project becomes the open one. */
+function applyProjectAppearance() {
+  loadProjectAppearance();
+  loadProjectBackground();
+}
+
+/* Moves a project's look to a new id (used when the first project's 'default' id is replaced). */
+function moveProjectAppearance(fromId, toId) {
+  const saved = localStorage.getItem(APPEARANCE_PREFIX + fromId);
+  if (saved) { localStorage.setItem(APPEARANCE_PREFIX + toId, saved); localStorage.removeItem(APPEARANCE_PREFIX + fromId); }
+  const bg = localStorage.getItem(BG_SETTINGS_PREFIX + fromId);
+  if (bg) { localStorage.setItem(BG_SETTINGS_PREFIX + toId, bg); localStorage.removeItem(BG_SETTINGS_PREFIX + fromId); }
+  backgroundStore('get', bgKey(fromId)).then(blob => {
+    if (!blob) return;
+    return backgroundStore('put', bgKey(toId), blob).then(() => backgroundStore('delete', bgKey(fromId)));
+  }).catch(() => { /* nothing to move */ });
+}
+
+function forgetProjectAppearance(id) {
+  localStorage.removeItem(APPEARANCE_PREFIX + id);
+  localStorage.removeItem(BG_SETTINGS_PREFIX + id);
+  backgroundStore('delete', bgKey(id)).catch(() => { /* none saved */ });
+}
+
+/* One-time move from the old app-wide look to per-project looks: every existing
+   project keeps the look it had, and the background goes to the project that was
+   open when it was chosen. */
+async function migrateAppearanceToProjects() {
+  if (localStorage.getItem(APPEARANCE_MIGRATED_KEY)) return;
+  const legacy = { ...APPEARANCE_DEFAULTS };
+  Object.entries(LEGACY_APPEARANCE_KEYS).forEach(([field, key]) => {
+    const value = localStorage.getItem(key);
+    if (value) legacy[field] = value;
+  });
+  const ids = new Set(projectArchive().map(p => p.id));
+  ids.add(currentProjectId);
+  ids.forEach(id => { if (!readAppearance(id)) writeAppearance(id, legacy); });
+
+  const legacyBgSettings = localStorage.getItem('folio-background');
+  try {
+    const blob = await backgroundStore('get', 'background');
+    if (blob && !(await backgroundStore('get', bgKey(currentProjectId)))) {
+      await backgroundStore('put', bgKey(currentProjectId), blob);
+      if (legacyBgSettings) localStorage.setItem(BG_SETTINGS_PREFIX + currentProjectId, legacyBgSettings);
+    }
+    if (blob) await backgroundStore('delete', 'background');
+  } catch (e) { /* no old background */ }
+  localStorage.removeItem('folio-background');
+  Object.values(LEGACY_APPEARANCE_KEYS).forEach(key => localStorage.removeItem(key));
+  localStorage.setItem(APPEARANCE_MIGRATED_KEY, '1');
+}
+
+/* ── Opening pictures ──
+   Covers and backgrounds share this. It doesn't trust a file's type label: it tries
+   the browser's decoder, then an <img>, then (in the desktop app) macOS's own image
+   tools, so HEIC photos from an iPhone, TIFF, BMP, GIF, SVG and mislabeled files work. */
+const IMAGE_NAME = /\.(png|jpe?g|jfif|pjpeg|webp|avif|gif|bmp|tiff?|heic|heif|svg|ico)$/i;
+const IMAGE_ACCEPT = 'image/*,.heic,.heif,.tif,.tiff,.jfif,.avif,.webp';
+
+function looksLikeImageFile(file) {
+  return !!file && (file.type.startsWith('image/') || IMAGE_NAME.test(file.name) || (!file.type && !/\.(folio|json|txt|md|pdf|docx?)$/i.test(file.name)));
+}
+
+function loadImageElement(src, revokeAfter) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const done = () => { if (revokeAfter) URL.revokeObjectURL(src); };
+    image.onload = () => { done(); resolve(image); };
+    image.onerror = () => { done(); reject(new Error('Could not decode image')); };
+    image.src = src;
+  });
+}
+
+async function decodeImageFile(file) {
+  try { return await createImageBitmap(file); } catch (e) { /* try the next way */ }
+  try { return await loadImageElement(URL.createObjectURL(file), true); } catch (e) { /* try the next way */ }
+  if (window.folioImages) {
+    const dataUrl = await window.folioImages.decode(file);
+    if (dataUrl) return loadImageElement(dataUrl, false);
+  }
+  throw new Error('Unsupported image');
+}
+
+function imageSize(source) {
+  const width = source.naturalWidth || source.width || 1200;
+  const height = source.naturalHeight || source.height || 1200;
+  return { width, height };
+}
+
+/* Draws the picture no larger than maxDimension on its longest side. */
+function imageToCanvas(source, maxDimension) {
+  const { width, height } = imageSize(source);
+  const scale = Math.min(1, maxDimension / Math.max(width, height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+  if (source.close) source.close();
+  return canvas;
+}
+
+/* The picture from a drop: a file from Finder, or an image dragged out of Photos or a web page. */
+async function imageFileFromDrop(dataTransfer) {
+  const file = [...dataTransfer.files].find(looksLikeImageFile);
+  if (file) return file;
+  let url = (dataTransfer.getData('text/uri-list') || '').split('\n').map(s => s.trim()).find(s => s && !s.startsWith('#'));
+  if (!url) {
+    const match = (dataTransfer.getData('text/html') || '').match(/<img[^>]+src=["']([^"']+)["']/i);
+    if (match) url = match[1];
+  }
+  if (!url) return null;
+  try {
+    if (/^https?:/i.test(url) && window.folioImages) {
+      const fetched = await window.folioImages.fetch(url);
+      if (!fetched) return null;
+      return new File([fetched.bytes], url.split('/').pop().split('?')[0] || 'dropped-image', { type: fetched.type });
+    }
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new File([blob], url.split('/').pop().split('?')[0] || 'dropped-image', { type: blob.type });
+  } catch (e) {
+    return null;
+  }
+}
+
+/* ── Background image (per project) ──
+   The image lives in IndexedDB (too large for localStorage), one per project; its
+   settings in localStorage. With no image, html[data-bg] is absent and the
+   palette's own backdrop shows. */
+const BG_SETTINGS_PREFIX = 'folio-background:';
 const BG_DEFAULTS = { blur: 24, clarity: 86, dim: 12, match: true, palette: null, name: '' };
 let bgSettings = { ...BG_DEFAULTS };
 let bgActive = false;
 let bgObjectUrl = null;
+let bgLoadToken = 0;
 
-function backgroundStore(op, value) {
+const bgKey = projectId => `background:${projectId}`;
+
+function backgroundStore(op, key, value) {
   return new Promise((resolve, reject) => {
     const open = indexedDB.open('folio-assets', 1);
     open.onupgradeneeded = () => open.result.createObjectStore('files');
@@ -287,7 +436,7 @@ function backgroundStore(op, value) {
       const db = open.result;
       const tx = db.transaction('files', op === 'get' ? 'readonly' : 'readwrite');
       const store = tx.objectStore('files');
-      const req = op === 'get' ? store.get('background') : op === 'put' ? store.put(value, 'background') : store.delete('background');
+      const req = op === 'get' ? store.get(key) : op === 'put' ? store.put(value, key) : store.delete(key);
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
       tx.oncomplete = () => db.close();
@@ -295,8 +444,8 @@ function backgroundStore(op, value) {
   });
 }
 
-function saveBackgroundSettings() {
-  try { localStorage.setItem(BG_SETTINGS_KEY, JSON.stringify(bgSettings)); } catch (e) { /* ignore */ }
+function saveBackgroundSettings(projectId = currentProjectId) {
+  try { localStorage.setItem(BG_SETTINGS_PREFIX + projectId, JSON.stringify(bgSettings)); } catch (e) { /* ignore */ }
 }
 
 function hexToHue(hex) {
@@ -340,14 +489,9 @@ function matchPaletteToImage(source) {
 
 /* Shrinks big photos so storage and repaint stay light. */
 async function prepareBackgroundImage(file) {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, 2560 / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  const palette = matchPaletteToImage(bitmap);
-  bitmap.close();
+  const source = await decodeImageFile(file);
+  const palette = matchPaletteToImage(source);
+  const canvas = imageToCanvas(source, 2560);
   const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.88));
   return { blob, palette };
 }
@@ -391,10 +535,17 @@ function syncBackgroundUI() {
 }
 
 async function setBackgroundFromFile(file) {
-  if (!file || !file.type.startsWith('image/')) return;
+  if (!file) return;
+  const projectId = currentProjectId; // the novel open when the picture was chosen gets it
   try {
     const { blob, palette } = await prepareBackgroundImage(file);
-    await backgroundStore('put', blob);
+    await backgroundStore('put', bgKey(projectId), blob);
+    if (projectId !== currentProjectId) {
+      const saved = { ...BG_DEFAULTS, palette, name: file.name };
+      localStorage.setItem(BG_SETTINGS_PREFIX + projectId, JSON.stringify(saved));
+      return;
+    }
+    bgLoadToken++; // a slower load of the old background must not replace this one
     if (bgObjectUrl) URL.revokeObjectURL(bgObjectUrl);
     bgObjectUrl = URL.createObjectURL(blob);
     bgSettings = { ...bgSettings, palette, name: file.name, match: bgActive ? bgSettings.match : true };
@@ -403,43 +554,60 @@ async function setBackgroundFromFile(file) {
     applyBackground();
   } catch (e) {
     console.error('Could not set background', e);
-    alert('That image could not be used as a background. Try a JPG, PNG or WebP file.');
+    alert(`Folio couldn't open "${file.name}" as a picture. If it's a photo, try exporting it from Photos as a JPEG first.`);
   }
 }
 
 async function removeBackground() {
-  try { await backgroundStore('delete'); } catch (e) { /* ignore */ }
+  const projectId = currentProjectId;
+  bgLoadToken++;
+  try { await backgroundStore('delete', bgKey(projectId)); } catch (e) { /* ignore */ }
+  localStorage.removeItem(BG_SETTINGS_PREFIX + projectId);
+  if (projectId !== currentProjectId) return;
   if (bgObjectUrl) URL.revokeObjectURL(bgObjectUrl);
   bgObjectUrl = null;
   bgActive = false;
   bgSettings = { ...BG_DEFAULTS };
-  localStorage.removeItem(BG_SETTINGS_KEY);
   applyBackground();
 }
 
-async function initBackground() {
-  try { bgSettings = { ...BG_DEFAULTS, ...JSON.parse(localStorage.getItem(BG_SETTINGS_KEY) || '{}') }; } catch (e) { bgSettings = { ...BG_DEFAULTS }; }
-  try {
-    const blob = await backgroundStore('get');
-    if (blob) { bgObjectUrl = URL.createObjectURL(blob); bgActive = true; }
-  } catch (e) { /* no stored background */ }
+/* Shows the open project's background, or none. Clears the previous project's
+   straight away so it never lingers on a novel that doesn't have it. */
+async function loadProjectBackground() {
+  const token = ++bgLoadToken;
+  const projectId = currentProjectId;
+  if (bgObjectUrl) URL.revokeObjectURL(bgObjectUrl);
+  bgObjectUrl = null;
+  bgActive = false;
+  try { bgSettings = { ...BG_DEFAULTS, ...JSON.parse(localStorage.getItem(BG_SETTINGS_PREFIX + projectId) || '{}') }; } catch (e) { bgSettings = { ...BG_DEFAULTS }; }
+  applyBackground();
+  let blob = null;
+  try { blob = await backgroundStore('get', bgKey(projectId)); } catch (e) { /* none saved */ }
+  if (token !== bgLoadToken || !blob) return; // another project opened meanwhile, or no background
+  bgObjectUrl = URL.createObjectURL(blob);
+  bgActive = true;
   applyBackground();
 }
 
 function bindBackgroundControls() {
   const input = document.getElementById('bg-file-input');
   const dropzone = document.getElementById('bg-dropzone');
+  const section = document.querySelector('.bg-section');
   const choose = () => input.click();
+  input.accept = IMAGE_ACCEPT;
   dropzone.addEventListener('click', choose);
   document.getElementById('bg-replace-btn').addEventListener('click', choose);
   document.getElementById('bg-remove-btn').addEventListener('click', removeBackground);
   input.addEventListener('change', () => { setBackgroundFromFile(input.files[0]); input.value = ''; });
-  dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
-  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
-  dropzone.addEventListener('drop', e => {
+  // Drop anywhere in the Background section — on the empty box, or on the current picture to replace it.
+  section.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+  section.addEventListener('dragleave', e => { if (!section.contains(e.relatedTarget)) dropzone.classList.remove('dragover'); });
+  section.addEventListener('drop', async e => {
     e.preventDefault();
     dropzone.classList.remove('dragover');
-    setBackgroundFromFile(e.dataTransfer.files[0]);
+    const file = await imageFileFromDrop(e.dataTransfer);
+    if (file) setBackgroundFromFile(file);
+    else alert("That didn't come through as a picture. Try saving it to your Mac first, then drop the file here.");
   });
   ['blur', 'clarity', 'dim'].forEach(key => {
     document.getElementById(`bg-${key}`).addEventListener('input', e => {
@@ -462,12 +630,13 @@ function toggleSettingsMenu(force) {
 }
 
 function init() {
-  initTheme();
-  initBackground();
   setEditorZoom(Number(localStorage.getItem(EDITOR_ZOOM_KEY)) || 100, false);
   setBookZoom(Number(localStorage.getItem(BOOK_ZOOM_KEY)) || 100, false);
   loadPersistedState();
   ensureUniqueProjectId(); // migrate off the generic 'default' id every install starts with, before anything can compare ids against another device's file
+  // Its first, synchronous part copies the old app-wide look into each project before we show it.
+  migrateAppearanceToProjects().catch(() => {}).then(loadProjectBackground);
+  loadProjectAppearance();
   renderTree();
   loadDoc(activeId);
   updateTotals();
@@ -3314,28 +3483,10 @@ function writeProjectArchive(projects) {
   }
 }
 
-function prepareCoverImage(file) {
-  const accepted = ['image/png', 'image/jpeg', 'image/webp', 'image/avif'];
-  if (!accepted.includes(file.type)) return Promise.reject(new Error('Unsupported image type'));
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Could not read image'));
-    reader.onload = () => {
-      const image = new Image();
-      image.onerror = () => reject(new Error('Could not decode image'));
-      image.onload = () => {
-        const maxDimension = 900;
-        const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-        canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/webp', 0.78));
-      };
-      image.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-  });
+/* Any picture Folio can open (see decodeImageFile), shrunk to cover size. */
+async function prepareCoverImage(file) {
+  const source = await decodeImageFile(file);
+  return imageToCanvas(source, 900).toDataURL('image/webp', 0.82);
 }
 
 async function saveProjectCoverFile(id, file) {
@@ -3348,11 +3499,12 @@ async function saveProjectCoverFile(id, file) {
       delete project.cover;
       project.updatedAt = new Date().toISOString();
       writeProjectArchive(projects);
+      if (syncFolderHandle) writeProjectToSyncFolder(project); // put the new cover in the synced file now, not at the next edit
     }
     renderProjects();
   } catch (error) {
     console.error('Could not save cover', error);
-    if (error.message !== 'Project not found') alert('That image could not be used. Choose a PNG, JPEG, WebP, or AVIF file.');
+    if (error.message !== 'Project not found') alert(`Folio couldn't open "${file.name}" as a picture. If it's a photo, try exporting it from Photos as a JPEG first.`);
   }
 }
 
@@ -3984,7 +4136,7 @@ function renderProjects() {
           <button data-project-action="delete" type="button" class="danger">Delete project…</button>
         </div>
       </div>
-      <input class="project-cover-input" type="file" accept="image/png,image/jpeg,image/webp,image/avif">
+      <input class="project-cover-input" type="file" accept="${IMAGE_ACCEPT}">
     </div>`;
   }).join('') + `<div class="shelf-new">
       <button class="shelf-new-tile" type="button">
@@ -4040,15 +4192,21 @@ function renderProjects() {
       saveProjectCoverFile(id, file);
     });
   });
-  document.querySelectorAll('.project-cover').forEach(cover => {
-    cover.addEventListener('dragover', e => { e.preventDefault(); cover.classList.add('drag-over'); });
-    cover.addEventListener('dragleave', () => cover.classList.remove('drag-over'));
-    cover.addEventListener('drop', e => {
-      e.preventDefault(); cover.classList.remove('drag-over');
-      const file = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
-      if (!file) return;
-      const id = cover.dataset.coverId;
-      saveProjectCoverFile(id, file);
+  // Drop a picture anywhere on a project's card (not just the cover itself) to make it the cover.
+  // A .folio file dropped on a card still imports, as it does on the empty shelf.
+  document.querySelectorAll('.project-card, .continue-cover').forEach(card => {
+    const cover = card.querySelector('.project-cover');
+    const projectId = card.dataset.id || (cover && cover.dataset.coverId);
+    card.addEventListener('dragover', e => { e.preventDefault(); if (cover) cover.classList.add('drag-over'); });
+    card.addEventListener('dragleave', e => { if (cover && !card.contains(e.relatedTarget)) cover.classList.remove('drag-over'); });
+    card.addEventListener('drop', async e => {
+      e.preventDefault(); e.stopPropagation();
+      if (cover) cover.classList.remove('drag-over');
+      const folio = [...e.dataTransfer.files].find(f => f.name.endsWith('.folio'));
+      if (folio) { importProjectFile(folio); return; }
+      const file = await imageFileFromDrop(e.dataTransfer);
+      if (file) saveProjectCoverFile(projectId, file);
+      else alert("That didn't come through as a picture. Try saving it to your Mac first, then drop the file on the cover.");
     });
   });
   hydrateProjectCovers(archive);
@@ -4080,6 +4238,7 @@ async function deleteProject(id) {
   if (!writeProjectArchive(remaining)) return;
 
   try { await deleteStoredCover(id); } catch (e) { /* no cover to remove */ }
+  forgetProjectAppearance(id);
   localStorage.removeItem(`folio-formatter:${id}`);
   rememberDeletedProject(id);
   await removeProjectFromSyncFolder(id);
@@ -4106,6 +4265,7 @@ async function deleteProject(id) {
     sessionBaseWords = getSessionBase();
     renderTree(); loadDoc(activeId); persistState();
     if (!next) saveProjectToArchive();
+    applyProjectAppearance();
   }
 
   renderProjects();
@@ -4143,6 +4303,7 @@ function switchProject(id) {
   document.getElementById('project-title-input').value = project.title;
   document.getElementById('projects-overlay').classList.remove('open');
   sessionBaseWords = getSessionBase(); renderTree(); loadDoc(activeId); persistState();
+  applyProjectAppearance();
 }
 
 function createProject() {
@@ -4158,6 +4319,7 @@ function createProject() {
   loadDoc(activeId); // refresh the editor DOM to the new blank doc BEFORE anything below reads it back out
   persistState();
   saveProjectToArchive();
+  applyProjectAppearance(); // a new novel starts with the default look
 }
 
 /* ────────────────────────────────────────
@@ -4174,12 +4336,13 @@ async function buildProjectFilePayload(id, projectOverride) {
   if (!project) return null;
 
   let cover = null;
-  try { cover = await getStoredCover(project.id); } catch (e) { /* no cover saved */ }
+  let coverUnreadable = false;
+  try { cover = (await getStoredCover(project.id)) || null; } catch (e) { coverUnreadable = true; }
 
   let formatterSettings = null;
   try { formatterSettings = JSON.parse(localStorage.getItem(`folio-formatter:${project.id}`) || 'null'); } catch (e) { formatterSettings = null; }
 
-  return {
+  const payload = {
     folioFile: true,
     version: FOLIO_FILE_VERSION,
     exportedAt: new Date().toISOString(),
@@ -4187,6 +4350,10 @@ async function buildProjectFilePayload(id, projectOverride) {
     cover,
     formatterSettings
   };
+  // Not written to the file: tells the synced-folder save that "no cover" here means
+  // "couldn't read it", so it keeps the cover already in the file instead of erasing it.
+  Object.defineProperty(payload, 'coverUnreadable', { value: coverUnreadable });
+  return payload;
 }
 
 function safeFileSlug(title) {
@@ -4379,6 +4546,7 @@ async function writeProjectFileNow(project) {
     }
 
     const payload = await buildProjectFilePayload(project.id, project);
+    if (!payload.cover && payload.coverUnreadable && pending && pending.cover) payload.cover = pending.cover;
     const fileHandle = await syncFolderHandle.getFileHandle(newName, { create: true });
     writable = await fileHandle.createWritable();
     await writable.write(JSON.stringify(payload));
@@ -4599,6 +4767,14 @@ function ensureUniqueProjectId() {
 
   const newId = `project-${Date.now()}`;
   if (staleEntry) { staleEntry.id = newId; writeProjectArchive(archive); }
+  moveProjectAppearance('default', newId);
+  // The cover is stored by project id, so carry it over to the new id.
+  getStoredCover('default').then(cover => {
+    if (!cover) return;
+    return setStoredCover(newId, cover).then(() => deleteStoredCover('default')).then(() => renderProjects());
+  }).catch(() => { /* no cover to move */ });
+  const formatter = localStorage.getItem('folio-formatter:default');
+  if (formatter) { localStorage.setItem(`folio-formatter:${newId}`, formatter); localStorage.removeItem('folio-formatter:default'); }
   if (currentProjectId === 'default') { currentProjectId = newId; persistState(); }
 }
 
@@ -5424,6 +5600,7 @@ function setupEventListeners() {
     if (file) importProjectFile(file);
   });
   document.getElementById('projects-grid').addEventListener('dragover', e => {
+    if (e.target.closest('.project-card, .continue-cover')) return; // cards handle their own drops
     if (![...e.dataTransfer.items].some(item => item.kind === 'file')) return;
     e.preventDefault();
     document.getElementById('projects-grid').classList.add('drag-over');

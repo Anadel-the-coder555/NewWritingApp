@@ -1,6 +1,8 @@
 // Electron entry point for Folio.
 // It opens index.html in a desktop window. Your app code (app.js, style.css) is unchanged.
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, net } = require('electron');
+const os = require('os');
+const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { createSyncFolder } = require('./sync-folder');
@@ -8,6 +10,21 @@ const { createSyncFolder } = require('./sync-folder');
 // For testing: FOLIO_USER_DATA=/some/folder npm start runs Folio with separate,
 // throwaway data instead of your real projects.
 if (process.env.FOLIO_USER_DATA) app.setPath('userData', process.env.FOLIO_USER_DATA);
+
+// Only one Folio at a time. Two copies share the same storage folder, and the
+// second can't open it: its covers come back empty and its saves write
+// "cover: null" over the synced files. Opening Folio again just brings the
+// existing window forward.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  process.exit(0);
+}
+app.on('second-instance', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
 
 let mainWindow = null;
 let isQuitting = false;
@@ -145,6 +162,63 @@ ipcMain.handle('folio-sync:choose-folder', async (event) => {
   });
   if (result.canceled || !result.filePaths[0]) return null;
   return syncFolder.setFolder(result.filePaths[0]);
+});
+
+// ── Pictures the page can't open by itself ──────────────────────
+// Covers and backgrounds try the browser's own decoder first. Anything it can't
+// read (iPhone HEIC/HEIF photos, TIFF, some camera files) comes here and is
+// converted to a JPEG with macOS's image tools.
+function sipsToJpeg(inputPath) {
+  return new Promise(resolve => {
+    if (process.platform !== 'darwin') return resolve(null);
+    const out = path.join(os.tmpdir(), `folio-image-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`);
+    execFile('/usr/bin/sips', ['-s', 'format', 'jpeg', '-Z', '3000', inputPath, '--out', out], error => {
+      if (error) return resolve(null);
+      try {
+        const data = fs.readFileSync(out);
+        fs.unlinkSync(out);
+        resolve(`data:image/jpeg;base64,${data.toString('base64')}`);
+      } catch (e) { resolve(null); }
+    });
+  });
+}
+
+ipcMain.handle('folio-image:decode', async (event, source) => {
+  if (!source) return null;
+  let image = source.path ? nativeImage.createFromPath(source.path) : null;
+  if ((!image || image.isEmpty()) && source.bytes) image = nativeImage.createFromBuffer(Buffer.from(source.bytes));
+  if (image && !image.isEmpty()) {
+    const { width, height } = image.getSize();
+    if (Math.max(width, height) > 3000) image = image.resize(width >= height ? { width: 3000, quality: 'best' } : { height: 3000, quality: 'best' });
+    return `data:image/jpeg;base64,${image.toJPEG(90).toString('base64')}`;
+  }
+  if (source.path) return sipsToJpeg(source.path);
+  if (source.bytes) {
+    const tmp = path.join(os.tmpdir(), `folio-image-in-${Date.now()}`);
+    try {
+      fs.writeFileSync(tmp, Buffer.from(source.bytes));
+      return await sipsToJpeg(tmp);
+    } finally {
+      try { fs.unlinkSync(tmp); } catch (e) { /* ignore */ }
+    }
+  }
+  return null;
+});
+
+// A picture dragged in from a web page arrives as a link; fetch it here, where
+// the website's cross-origin rules don't block it.
+ipcMain.handle('folio-image:fetch', async (event, url) => {
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return null;
+  try {
+    const response = await net.fetch(url);
+    if (!response.ok) return null;
+    const type = (response.headers.get('content-type') || '').split(';')[0].trim();
+    const data = Buffer.from(await response.arrayBuffer());
+    if (!data.length || data.length > 40 * 1024 * 1024) return null;
+    return { type, bytes: data };
+  } catch (e) {
+    return null;
+  }
 });
 
 app.whenReady().then(() => {

@@ -1,6 +1,17 @@
 // Runs before app.js. Replaces window.prompt(), which Electron doesn't support,
 // with one that asks main.js to show a small input window.
-const { ipcRenderer } = require('electron');
+const { ipcRenderer, webUtils } = require('electron');
+
+// Opens pictures the page can't decode itself (HEIC, TIFF…) via main.js.
+window.folioImages = {
+  async decode(file) {
+    let filePath = '';
+    try { filePath = webUtils.getPathForFile(file) || ''; } catch (e) { /* not a file on disk */ }
+    const bytes = filePath ? null : new Uint8Array(await file.arrayBuffer());
+    return ipcRenderer.invoke('folio-image:decode', { path: filePath, bytes });
+  },
+  fetch: url => ipcRenderer.invoke('folio-image:fetch', url),
+};
 
 window.prompt = (message, defaultValue) =>
   ipcRenderer.sendSync('folio-prompt', message, defaultValue);
