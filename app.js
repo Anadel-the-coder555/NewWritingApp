@@ -286,6 +286,20 @@ function init() {
   renderSplitReference();
   renderMarginNotes();
   updateModeButtons();
+  // Electron (main.js) calls this before closing the window and waits for it, so
+  // the last save to the synced folder finishes instead of being cut off.
+  window.folioFlushBeforeQuit = async () => {
+    try {
+      saveCharacterView();
+      saveProjectToArchive();
+      persistState();
+      clearTimeout(autoSyncTimer);
+      await syncWritesSettled();
+      syncWritesClosed = true; // the window is closing: don't start a save that would be cut off
+    } catch (e) {
+      console.error('Could not finish saving before quit', e);
+    }
+  };
   window.addEventListener('beforeunload', () => {
     saveCharacterView();
     // saveProjectToArchive() also flushes saveCurrentDoc() and, critically, updates
@@ -3479,7 +3493,7 @@ async function importProjectFile(file) {
 ──────────────────────────────────────── */
 let syncFolderHandle = null;
 
-function syncFolderSupported() { return 'showDirectoryPicker' in window; }
+function syncFolderSupported() { return Boolean(window.folioNative) || 'showDirectoryPicker' in window; }
 
 async function ensureSyncFolderPermission(handle, requestIfNeeded) {
   if (!handle) return false;
@@ -3526,9 +3540,30 @@ async function removeProjectFromSyncFolder(id) {
   try { await syncFolderHandle.removeEntry(name); } catch (e) { /* already gone */ }
 }
 
-async function writeProjectToSyncFolder(project) {
+/* Folder writes run one at a time. Several things can ask for a write within the
+   same second (auto-save, merging Claude's edits, quitting); letting them overlap
+   could leave a half-finished save behind. */
+let syncWriteChain = Promise.resolve();
+let syncWritesInFlight = 0;
+let syncWritesClosed = false;
+
+function writeProjectToSyncFolder(project) {
+  if (syncWritesClosed) return Promise.resolve();
+  syncWritesInFlight++;
+  const run = syncWriteChain.then(() => writeProjectFileNow(project)).finally(() => { syncWritesInFlight--; });
+  syncWriteChain = run.catch(() => {});
+  return run;
+}
+
+/* Resolves once every folder write asked for so far has finished. */
+function syncWritesSettled() {
+  return syncWriteChain;
+}
+
+async function writeProjectFileNow(project) {
   if (!syncFolderHandle) return;
-  if (!(await ensureSyncFolderPermission(syncFolderHandle, false))) return; // never prompt during a background autosave
+  if (!(await ensureSyncFolderPermission(syncFolderHandle, false))) { warnSyncFolderNeedsAccess(); return; } // never prompt during a background autosave
+  let writable = null;
   try {
     const map = syncFilenameMap();
     let newName = `${safeFileSlug(project.title)}.folio`;
@@ -3543,23 +3578,80 @@ async function writeProjectToSyncFolder(project) {
     const pending = await readSyncFile(oldName || newName);
     if (pending && pending.claudeChanges && pending.project && pending.project.id === project.id
         && !appliedClaudeChangeIds().includes(pending.claudeChanges.id)) {
-      await applyClaudeChanges(pending);
+      // Run it after this write slot is released — it queues its own write.
+      setTimeout(() => applyClaudeChanges(pending), 0);
       return;
     }
 
+    const payload = await buildProjectFilePayload(project.id, project);
+    const fileHandle = await syncFolderHandle.getFileHandle(newName, { create: true });
+    writable = await fileHandle.createWritable();
+    await writable.write(JSON.stringify(payload));
+    await writable.close();
+    writable = null;
+    // Only drop the old file (after a rename) once the new one is safely written.
     if (oldName && oldName !== newName) {
       try { await syncFolderHandle.removeEntry(oldName); } catch (e) { /* already gone */ }
     }
-    const payload = await buildProjectFilePayload(project.id, project);
-    const fileHandle = await syncFolderHandle.getFileHandle(newName, { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(JSON.stringify(payload));
-    await writable.close();
     map[project.id] = newName;
     setSyncFilenameMap(map);
   } catch (e) {
     console.error('Could not write to synced folder', e);
+    // A save that fails partway leaves a "<name>.crswap" temp file behind unless aborted.
+    if (writable) { try { await writable.abort(); } catch (abortError) { /* ignore */ } }
   }
+}
+
+/* Removes "<name>.crswap" temp files left by saves that were cut off (for example
+   by quitting mid-save). Only runs when no save is in progress, since a running
+   save owns its temp file. */
+async function removeStaleSwapFiles() {
+  if (!syncFolderHandle || syncWritesInFlight > 0) return;
+  try {
+    const stale = [];
+    for await (const entry of syncFolderHandle.values()) {
+      if (entry.kind === 'file' && entry.name.endsWith('.crswap')) stale.push(entry.name);
+    }
+    for (const name of stale) {
+      if (syncWritesInFlight > 0) return;
+      try { await syncFolderHandle.removeEntry(name); } catch (e) { /* in use or gone */ }
+    }
+  } catch (e) { /* ignore */ }
+}
+
+/* Electron forgets folder access every time Folio restarts. Asking again needs
+   a click or key press, so the first time you touch Folio after it opens, it
+   quietly asks then (Electron grants it without a dialog). Without this, every
+   save to the synced folder was silently skipped until you clicked Reconnect. */
+let syncAccessListenerArmed = false;
+let syncAccessWarned = false;
+
+function armSyncFolderReconnectOnInteraction() {
+  if (syncAccessListenerArmed || !syncFolderHandle) return;
+  syncAccessListenerArmed = true;
+  const onInteract = async () => {
+    document.removeEventListener('pointerdown', onInteract, true);
+    document.removeEventListener('keydown', onInteract, true);
+    syncAccessListenerArmed = false;
+    const granted = await ensureSyncFolderPermission(syncFolderHandle, true);
+    updateSyncFolderUI(!granted);
+    if (!granted) { warnSyncFolderNeedsAccess(true); return; }
+    syncAccessWarned = false;
+    await scanSyncFolder();
+    await writeMissingProjectsToSyncFolder();
+    delete lastAutoSyncedSignature[currentProjectId];
+    autoSyncCurrentProject(); // write anything that piled up while access was missing
+  };
+  document.addEventListener('pointerdown', onInteract, true);
+  document.addEventListener('keydown', onInteract, true);
+}
+
+function warnSyncFolderNeedsAccess(force) {
+  if (!syncFolderHandle) return;
+  armSyncFolderReconnectOnInteraction();
+  if (syncAccessWarned && !force) return;
+  syncAccessWarned = true;
+  if (force) showFolioToast("Folio can't save to your synced folder. Open Projects and click Reconnect.");
 }
 
 /* Writes or replaces one project's archive entry from data read out of the synced
@@ -3646,7 +3738,8 @@ async function scanSyncFolder() {
   if (!syncFolderHandle) return;
   const granted = await ensureSyncFolderPermission(syncFolderHandle, false);
   updateSyncFolderUI(!granted);
-  if (!granted) return;
+  if (!granted) { armSyncFolderReconnectOnInteraction(); return; }
+  await removeStaleSwapFiles();
 
   const archive = projectArchive();
   const deletedIds = deletedProjectIds();
@@ -3714,14 +3807,64 @@ function ensureUniqueProjectId() {
   if (currentProjectId === 'default') { currentProjectId = newId; persistState(); }
 }
 
+/* In the desktop app, the synced folder is reached through Electron (preload.js →
+   sync-folder.js) rather than the browser's File System Access API, which kept
+   losing access and leaving half-finished saves behind. This wraps those calls in
+   the same shape as a browser folder handle, so the rest of the sync code works
+   unchanged with either. */
+function nativeSyncFolderHandle(folderPath) {
+  const api = window.folioNative;
+  const notFound = name => new DOMException(`${name} not found`, 'NotFoundError');
+  const fileFrom = (name, info) => ({ name, lastModified: info.mtimeMs, text: () => api.read(name) });
+  const fileHandle = (name, knownInfo) => ({
+    kind: 'file',
+    name,
+    async getFile() {
+      const info = knownInfo || await api.stat(name);
+      if (!info) throw notFound(name);
+      return fileFrom(name, info);
+    },
+    async createWritable() {
+      let parts = [];
+      return {
+        async write(data) { parts.push(String(data)); },
+        async close() { await api.write(name, parts.join('')); parts = []; }, // written atomically by sync-folder.js
+        async abort() { parts = []; }
+      };
+    }
+  });
+  return {
+    kind: 'directory',
+    native: true,
+    name: folderPath.split(/[\\/]/).filter(Boolean).pop() || folderPath,
+    path: folderPath,
+    async queryPermission() { return 'granted'; },
+    async requestPermission() { return 'granted'; },
+    async *values() { for (const info of await api.list()) yield fileHandle(info.name, info); },
+    async getFileHandle(name, options = {}) {
+      if (!options.create && !(await api.stat(name))) throw notFound(name);
+      return fileHandle(name);
+    },
+    async removeEntry(name) { await api.remove(name); }
+  };
+}
+
 async function chooseSyncFolder() {
   if (!syncFolderSupported()) {
     alert("Folder sync needs the File System Access API, which only Chrome and Edge on desktop support right now — Safari and iPhone browsers don't have it. Use Export/Import to move projects between those.");
     return;
   }
   try {
-    const handle = await window.showDirectoryPicker({ id: 'folio-sync', mode: 'readwrite' });
-    await setSyncFolderHandle(handle);
+    let handle;
+    if (window.folioNative) {
+      const folderPath = await window.folioNative.chooseSyncFolder();
+      if (!folderPath) return; // cancelled
+      handle = nativeSyncFolderHandle(folderPath);
+      try { await clearSyncFolderHandle(); } catch (e) { /* no old browser handle */ }
+    } else {
+      handle = await window.showDirectoryPicker({ id: 'folio-sync', mode: 'readwrite' });
+      await setSyncFolderHandle(handle);
+    }
     syncFolderHandle = handle;
     updateSyncFolderUI();
     ensureUniqueProjectId();
@@ -3744,6 +3887,7 @@ async function reconnectSyncFolder() {
 async function disconnectSyncFolder() {
   stopSyncPolling();
   syncFolderHandle = null;
+  if (window.folioNative) { try { await window.folioNative.clearSyncFolder(); } catch (e) { /* ignore */ } }
   await clearSyncFolderHandle();
   updateSyncFolderUI();
   renderSyncConflicts([]);
@@ -3752,7 +3896,18 @@ async function disconnectSyncFolder() {
 async function loadSyncFolderHandle() {
   if (!syncFolderSupported()) { updateSyncFolderUI(); return; }
   try {
-    const handle = await getSyncFolderHandle();
+    let handle = null;
+    if (window.folioNative) {
+      const folderPath = await window.folioNative.getSyncFolder();
+      if (folderPath) {
+        handle = nativeSyncFolderHandle(folderPath);
+      } else if (await getSyncFolderHandle().catch(() => null)) {
+        // Connected the old way, which doesn't work reliably in the desktop app.
+        showFolioToast('Folio now saves to your synced folder a more reliable way. Open Projects and choose the folder once more.');
+      }
+    } else {
+      handle = await getSyncFolderHandle();
+    }
     if (!handle) { updateSyncFolderUI(); return; }
     syncFolderHandle = handle;
     ensureUniqueProjectId();
@@ -3931,7 +4086,7 @@ function mergeClaudeChanges(localDocs, remoteProject, changes, localNextId) {
     out.splice(insertAt, 0, doc);
     byId.set(doc.id, doc);
     touched.add(doc.id);
-    updated.push(`new: ${doc.title}`);
+    updated.push(`${doc.title} (new)`);
   }
   const createdIds = new Set((changes.created || []).map(id => renumbered.get(id) ?? id));
   for (const doc of out) {

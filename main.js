@@ -1,9 +1,17 @@
 // Electron entry point for Folio.
 // It opens index.html in a desktop window. Your app code (app.js, style.css) is unchanged.
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const fs = require('fs');
 const path = require('path');
+const { createSyncFolder } = require('./sync-folder');
+
+// For testing: FOLIO_USER_DATA=/some/folder npm start runs Folio with separate,
+// throwaway data instead of your real projects.
+if (process.env.FOLIO_USER_DATA) app.setPath('userData', process.env.FOLIO_USER_DATA);
 
 let mainWindow = null;
+let isQuitting = false;
+app.on('before-quit', () => { isQuitting = true; });
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -23,6 +31,29 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+
+  // Before the window closes, let Folio finish saving to the synced folder.
+  // Without this, quitting mid-save cut the save off and left a ".crswap" temp
+  // file behind with the real project file never updated.
+  let flushed = false;
+  mainWindow.on('close', (event) => {
+    if (flushed) return;
+    event.preventDefault();
+    const win = mainWindow;
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      ipcMain.removeListener('folio-flushed', onFlushed);
+      flushed = true;
+      if (!win.isDestroyed()) win.close();
+      if (isQuitting) app.quit();
+    };
+    const onFlushed = (e) => { if (e.sender === win.webContents) finish(); };
+    ipcMain.on('folio-flushed', onFlushed);
+    win.webContents.send('folio-flush-before-quit');
+    setTimeout(finish, 5000); // never hang on quit if something goes wrong
+  });
 
   // Any web link opens in your normal browser instead of inside Folio.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -75,7 +106,50 @@ ipcMain.on('folio-prompt', (event, message, defaultValue) => {
   win.once('ready-to-show', () => win.show());
 });
 
+// ── Synced folder ───────────────────────────────────────────────
+// app.js reaches the synced folder through these (see sync-folder.js).
+// Failures are also written to sync.log in Folio's data folder for debugging.
+let syncFolder = null;
+
+function logSyncError(action, name, error) {
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'sync.log'),
+      `${new Date().toISOString()} ${action} ${name || ''}: ${error && error.message}\n`);
+  } catch (e) { /* ignore */ }
+}
+
+function syncHandler(channel, action) {
+  ipcMain.handle(channel, async (event, ...args) => {
+    try {
+      return await action(...args);
+    } catch (error) {
+      logSyncError(channel, args[0], error);
+      throw error;
+    }
+  });
+}
+
+syncHandler('folio-sync:get-folder', () => syncFolder.getFolder());
+syncHandler('folio-sync:clear-folder', () => { syncFolder.setFolder(null); });
+syncHandler('folio-sync:list', () => syncFolder.list());
+syncHandler('folio-sync:stat', name => syncFolder.stat(name));
+syncHandler('folio-sync:read', name => syncFolder.read(name));
+syncHandler('folio-sync:write', (name, text) => syncFolder.write(name, text));
+syncHandler('folio-sync:remove', name => syncFolder.remove(name));
+ipcMain.handle('folio-sync:choose-folder', async (event) => {
+  const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+    title: 'Choose the folder Folio saves your projects to',
+    buttonLabel: 'Use This Folder',
+    properties: ['openDirectory', 'createDirectory'],
+    defaultPath: syncFolder.getFolder() || app.getPath('home'),
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  return syncFolder.setFolder(result.filePaths[0]);
+});
+
 app.whenReady().then(() => {
+  syncFolder = createSyncFolder(path.join(app.getPath('userData'), 'sync-folder.json'));
+
   // When testing with `npm start`, show the Folio icon in the Dock too.
   // (The packaged Folio.app gets its icon from forge.config.js instead.)
   if (process.platform === 'darwin' && !app.isPackaged) {
