@@ -88,6 +88,7 @@ function persistState() {
   } catch (e) {
     console.error('Could not save project to local storage', e);
   }
+  if (syncFolderHandle) scheduleAutoSync(); // keep the synced-folder copy fresh so Claude reads what you just wrote
 }
 
 function schedulePersist() {
@@ -2151,7 +2152,7 @@ function renderSnapshots() {
   if (!list) return;
   const d = docs.find(x => x.id === activeId);
   const snapshots = d && d.snapshots ? d.snapshots : [];
-  list.innerHTML = snapshots.length ? snapshots.map(s => `<div class="snapshot-item" data-id="${s.id}"><div><strong>${new Date(s.createdAt).toLocaleString()}</strong><span>${s.words.toLocaleString()} words</span></div><div><button data-action="compare">Compare</button><button data-action="restore">Restore</button></div></div>`).join('') : '<div class="panel-empty">No snapshots yet.</div>';
+  list.innerHTML = snapshots.length ? snapshots.map(s => `<div class="snapshot-item" data-id="${s.id}"><div><strong>${new Date(s.createdAt).toLocaleString()}</strong><span>${s.label ? `${escapeHTML(s.label)} · ` : ''}${(s.words || 0).toLocaleString()} words</span></div><div><button data-action="compare">Compare</button><button data-action="restore">Restore</button></div></div>`).join('') : '<div class="panel-empty">No snapshots yet.</div>';
   list.querySelectorAll('.snapshot-item button').forEach(btn => btn.addEventListener('click', () => {
     const snap = snapshots.find(s => s.id === +btn.closest('.snapshot-item').dataset.id);
     if (!snap) return;
@@ -3063,25 +3064,107 @@ async function exportFormattedBook() {
 
 function openProjects() { saveProjectToArchive(); renderProjects(); document.getElementById('projects-overlay').classList.add('open'); scanSyncFolder(); }
 
+// Muted cloth colours for projects that have no cover image yet. Each project
+// keeps the same colour every time, picked from a hash of its id.
+const SHELF_CLOTHS = ['#3d4a57', '#8a6b36', '#46543d', '#6b4552', '#4f5d6b', '#7a5a44'];
+function shelfCloth(id) {
+  let hash = 0;
+  for (const ch of String(id)) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return SHELF_CLOTHS[hash % SHELF_CLOTHS.length];
+}
+
+function shelfRelativeTime(value) {
+  const then = new Date(value);
+  const minutes = Math.round((Date.now() - then) / 60000);
+  if (!isFinite(minutes)) return '';
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days} days ago`;
+  return then.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: then.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+}
+
+function projectWords(p) {
+  return (p.docs || []).filter(d => d.section === 'manuscript').reduce((sum, d) => sum + countWords(d.content || ''), 0);
+}
+
+function shelfCoverHTML(p) {
+  return `<span class="project-cover" data-cover-id="${escapeHTML(p.id)}" style="--cloth: ${shelfCloth(p.id)}">
+    <span class="project-cover-placeholder">
+      <span class="cover-title">${escapeHTML(p.title)}</span>
+      <span class="cover-rule"></span>
+    </span>
+  </span>`;
+}
+
+function renderProjectsGreeting() {
+  const now = new Date();
+  const hour = now.getHours();
+  const part = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+  document.getElementById('projects-date').textContent = now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+  document.getElementById('projects-hello').innerHTML = `Good ${part}. <em>Shall we write?</em>`;
+}
+
+function renderContinueCard(archive) {
+  const section = document.getElementById('projects-continue');
+  const p = archive[0];
+  if (!p || archive.length < 2) { section.hidden = true; section.innerHTML = ''; return; }
+  const lastDoc = (p.docs || []).find(d => d.id === p.activeId);
+  const lastLine = lastDoc && !lastDoc.isFolder ? `Last open: ${escapeHTML(lastDoc.title || 'Untitled')} · ` : '';
+  section.hidden = false;
+  section.innerHTML = `
+    <button class="continue-cover" type="button" data-continue="open" aria-label="Open ${escapeHTML(p.title)}">${shelfCoverHTML(p)}</button>
+    <div class="continue-body">
+      <span class="projects-eyebrow">Continue writing</span>
+      <h2>${escapeHTML(p.title)}</h2>
+      <p>${lastLine}edited ${shelfRelativeTime(p.updatedAt)}</p>
+      <div class="continue-words"><strong>${projectWords(p).toLocaleString()}</strong><span>words in the manuscript</span></div>
+      <div class="continue-actions">
+        <button class="shelf-primary" type="button" data-continue="open">Resume writing</button>
+        <button class="shelf-ghost" type="button" data-continue="compile">Compile</button>
+      </div>
+    </div>`;
+  section.querySelectorAll('[data-continue]').forEach(button => button.addEventListener('click', () => {
+    switchProject(p.id);
+    if (button.dataset.continue === 'compile') openCompile();
+  }));
+}
+
 function renderProjects() {
   const archive = projectArchive().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  const allWords = archive.reduce((total, p) => total + (p.docs || []).filter(d => d.section === 'manuscript').reduce((sum, d) => sum + countWords(d.content || ''), 0), 0);
+  const allWords = archive.reduce((total, p) => total + projectWords(p), 0);
   document.getElementById('projects-summary').textContent = `${archive.length} project${archive.length === 1 ? '' : 's'} · ${allWords.toLocaleString()} words`;
+  renderProjectsGreeting();
+  renderContinueCard(archive);
+  document.getElementById('projects-overlay').classList.toggle('is-empty', !archive.length);
   if (!archive.length) {
-    document.getElementById('projects-grid').innerHTML = `<div class="projects-empty">No projects yet — click "New project" to start writing, or "Import project…" to bring one in.</div>`;
+    document.getElementById('projects-grid').innerHTML = `<div class="projects-empty">
+      <div class="empty-books" aria-hidden="true"><span></span><span></span><span></span></div>
+      <h1>An empty shelf, <em>for now.</em></h1>
+      <p>Start your first project, or bring one in from a .folio file. Everything you write is saved as you go.</p>
+      <div class="continue-actions">
+        <button class="shelf-primary" type="button" data-empty="new">Start a new project</button>
+        <button class="shelf-ghost" type="button" data-empty="import">Import project…</button>
+      </div>
+    </div>`;
+    document.querySelector('[data-empty="new"]').addEventListener('click', createProject);
+    document.querySelector('[data-empty="import"]').addEventListener('click', () => document.getElementById('import-project-input').click());
     return;
   }
   document.getElementById('projects-grid').innerHTML = archive.map(p => {
-    const words = (p.docs || []).filter(d => d.section === 'manuscript').reduce((sum, d) => sum + countWords(d.content || ''), 0);
-    return `<div class="project-card ${p.id === currentProjectId ? 'active' : ''}" data-id="${p.id}">
-      <button class="project-open">
-        <span class="project-cover">
-          <span class="project-cover-placeholder">▧<em>Drop a cover image</em></span>
-        </span>
-        <small>${words.toLocaleString()} words · ${new Date(p.updatedAt).toLocaleDateString()}</small>
+    const words = projectWords(p);
+    return `<div class="project-card ${p.id === currentProjectId ? 'active' : ''}" data-id="${escapeHTML(p.id)}">
+      <button class="project-open" type="button" aria-label="Open ${escapeHTML(p.title)}">
+        ${shelfCoverHTML(p)}
       </button>
       <div class="project-title-row">
-        <strong>${escapeHTML(p.title)}</strong>
+        <div class="project-meta">
+          <strong>${escapeHTML(p.title)}</strong>
+          <small>${words.toLocaleString()} words · ${shelfRelativeTime(p.updatedAt)}</small>
+        </div>
         <button class="project-more" type="button" title="Project options" aria-label="Options for ${escapeHTML(p.title)}">⋯</button>
         <div class="project-card-menu">
           <button data-project-action="edit" type="button">Open &amp; edit</button>
@@ -3094,7 +3177,14 @@ function renderProjects() {
       </div>
       <input class="project-cover-input" type="file" accept="image/png,image/jpeg,image/webp,image/avif">
     </div>`;
-  }).join('');
+  }).join('') + `<div class="shelf-new">
+      <button class="shelf-new-tile" type="button">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        Start a new project
+      </button>
+      <small>or drop a .folio file here</small>
+    </div>`;
+  document.querySelector('.shelf-new-tile').addEventListener('click', createProject);
   document.querySelectorAll('.project-card').forEach(card => card.addEventListener('click', e => {
     if (e.target.closest('.project-more, .project-card-menu, .project-cover-input')) return;
     switchProject(card.dataset.id);
@@ -3148,7 +3238,7 @@ function renderProjects() {
       e.preventDefault(); cover.classList.remove('drag-over');
       const file = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
       if (!file) return;
-      const id = cover.closest('.project-card').dataset.id;
+      const id = cover.dataset.coverId;
       saveProjectCoverFile(id, file);
     });
   });
@@ -3221,11 +3311,13 @@ async function hydrateProjectCovers(projects) {
         await setStoredCover(project.id, cover);
       }
       if (!cover) return;
+      document.querySelectorAll(`.project-cover[data-cover-id="${CSS.escape(project.id)}"]`).forEach(coverElement => {
+        coverElement.style.backgroundImage = `url("${cover}")`;
+        coverElement.classList.add('has-image');
+        coverElement.querySelector('.project-cover-placeholder').hidden = true;
+      });
       const card = document.querySelector(`.project-card[data-id="${CSS.escape(project.id)}"]`);
       if (!card) return;
-      const coverElement = card.querySelector('.project-cover');
-      coverElement.style.backgroundImage = `url("${cover}")`;
-      coverElement.querySelector('.project-cover-placeholder').hidden = true;
       card.querySelector('[data-project-action="cover"]').textContent = 'Change cover image';
     } catch (error) {
       console.error('Could not load project cover', error);
@@ -3439,8 +3531,22 @@ async function writeProjectToSyncFolder(project) {
   if (!(await ensureSyncFolderPermission(syncFolderHandle, false))) return; // never prompt during a background autosave
   try {
     const map = syncFilenameMap();
-    const newName = `${safeFileSlug(project.title)}.folio`;
+    let newName = `${safeFileSlug(project.title)}.folio`;
+    // Two projects with the same title must not share (and overwrite) one file.
+    if (Object.entries(map).some(([id, name]) => id !== project.id && name === newName)) {
+      newName = `${safeFileSlug(project.title)}-${safeFileSlug(String(project.id)).slice(-6)}.folio`;
+    }
     const oldName = map[project.id];
+
+    // If Claude changed this file and Folio hasn't merged that in yet, writing now
+    // would wipe Claude's edits. Merge first — that saves and writes again itself.
+    const pending = await readSyncFile(oldName || newName);
+    if (pending && pending.claudeChanges && pending.project && pending.project.id === project.id
+        && !appliedClaudeChangeIds().includes(pending.claudeChanges.id)) {
+      await applyClaudeChanges(pending);
+      return;
+    }
+
     if (oldName && oldName !== newName) {
       try { await syncFolderHandle.removeEntry(oldName); } catch (e) { /* already gone */ }
     }
@@ -3560,6 +3666,12 @@ async function scanSyncFolder() {
         continue;
       }
 
+      // Edits Claude made through the Folio connector are merged in automatically.
+      if (data.claudeChanges && !appliedClaudeChangeIds().includes(data.claudeChanges.id)) {
+        await applyClaudeChanges(data);
+        continue;
+      }
+
       const local = archive.find(p => p.id === data.project.id);
       if (!local) {
         await upsertSyncedProject(data);
@@ -3615,6 +3727,8 @@ async function chooseSyncFolder() {
     ensureUniqueProjectId();
     saveProjectToArchive(); // writes the current project into the folder immediately
     await scanSyncFolder();
+    await writeMissingProjectsToSyncFolder();
+    startSyncPolling();
   } catch (e) {
     if (e.name !== 'AbortError') console.error('Could not choose synced folder', e);
   }
@@ -3628,6 +3742,7 @@ async function reconnectSyncFolder() {
 }
 
 async function disconnectSyncFolder() {
+  stopSyncPolling();
   syncFolderHandle = null;
   await clearSyncFolderHandle();
   updateSyncFolderUI();
@@ -3642,9 +3757,248 @@ async function loadSyncFolderHandle() {
     syncFolderHandle = handle;
     ensureUniqueProjectId();
     await scanSyncFolder();
+    await writeMissingProjectsToSyncFolder();
+    startSyncPolling();
   } catch (e) {
     console.error('Could not load synced folder handle', e);
   }
+}
+
+/* ────────────────────────────────────────
+   Claude connector support
+   The Folio connector (claude-connector/folio-mcp.js) lets the Claude desktop app
+   read and edit projects through the .folio files in the synced folder. Three
+   things make that work smoothly while Folio is open:
+   1. Auto-sync: a couple of seconds after you stop typing, the open project is
+      written to the synced folder, so Claude always reads your latest text.
+   2. Polling: every few seconds Folio looks for files Claude changed.
+   3. Merging: Claude's file says exactly which fields of which documents it
+      changed, and a fingerprint of the value it started from. Folio applies
+      only those changes on top of what's open. If you changed the same thing in
+      the meantime, your version stays and Claude's is saved as a History
+      snapshot on that document — nothing is ever silently lost.
+──────────────────────────────────────── */
+let autoSyncTimer = null;
+let syncPollTimer = null;
+let syncPollBusy = false;
+const lastAutoSyncedSignature = {};
+const seenSyncFileTimes = {};
+
+function scheduleAutoSync() {
+  clearTimeout(autoSyncTimer);
+  autoSyncTimer = setTimeout(autoSyncCurrentProject, 2000);
+}
+
+function autoSyncCurrentProject() {
+  if (!syncFolderHandle) return;
+  saveCurrentDoc();
+  const signature = JSON.stringify({ title: document.getElementById('project-title-input').value, docs, nextId });
+  if (lastAutoSyncedSignature[currentProjectId] === signature) return; // nothing new since the last write
+  lastAutoSyncedSignature[currentProjectId] = signature;
+  saveProjectToArchive();
+}
+
+function startSyncPolling() {
+  stopSyncPolling();
+  syncPollTimer = setInterval(pollSyncFolderForClaudeChanges, 3000);
+}
+
+function stopSyncPolling() {
+  clearInterval(syncPollTimer);
+  syncPollTimer = null;
+}
+
+async function readSyncFile(name) {
+  if (!syncFolderHandle || !name) return null;
+  try {
+    const file = await (await syncFolderHandle.getFileHandle(name)).getFile();
+    return JSON.parse(await file.text());
+  } catch (e) {
+    return null; // missing or unreadable
+  }
+}
+
+async function pollSyncFolderForClaudeChanges() {
+  if (!syncFolderHandle || syncPollBusy) return;
+  syncPollBusy = true;
+  try {
+    if (!(await ensureSyncFolderPermission(syncFolderHandle, false))) return;
+    for await (const entry of syncFolderHandle.values()) {
+      if (entry.kind !== 'file' || !entry.name.endsWith('.folio')) continue;
+      const file = await entry.getFile();
+      if (seenSyncFileTimes[entry.name] === file.lastModified) continue;
+      seenSyncFileTimes[entry.name] = file.lastModified;
+      let data;
+      try { data = JSON.parse(await file.text()); } catch (e) { continue; }
+      if (data && data.folioFile && data.project && data.claudeChanges && !appliedClaudeChangeIds().includes(data.claudeChanges.id)) {
+        await applyClaudeChanges(data);
+      }
+    }
+  } catch (e) {
+    console.error('Could not check synced folder for Claude edits', e);
+  } finally {
+    syncPollBusy = false;
+  }
+}
+
+/* Every project should have a file in the synced folder — otherwise Claude can't see it. */
+async function writeMissingProjectsToSyncFolder() {
+  if (!syncFolderHandle || !(await ensureSyncFolderPermission(syncFolderHandle, false))) return;
+  const map = syncFilenameMap();
+  for (const project of projectArchive()) {
+    if (map[project.id] && (await readSyncFile(map[project.id]))) continue;
+    await writeProjectToSyncFolder(project);
+  }
+}
+
+function appliedClaudeChangeIds() {
+  try { return JSON.parse(localStorage.getItem('folio-claude-applied') || '[]'); } catch (e) { return []; }
+}
+function rememberAppliedClaudeChange(id) {
+  const ids = appliedClaudeChangeIds().filter(x => x !== id);
+  ids.push(id);
+  try { localStorage.setItem('folio-claude-applied', JSON.stringify(ids.slice(-200))); } catch (e) { /* ignore */ }
+}
+
+/* Same fingerprint function as valueHash() in claude-connector/folio-mcp.js — keep them identical. */
+function folioValueHash(value) {
+  const s = typeof value === 'string' ? value : JSON.stringify(value === undefined ? null : value);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return `${(h >>> 0).toString(16)}:${s.length}`;
+}
+
+/* Applies Claude's recorded changes (see the connector's recordChanges()) to a
+   list of documents. Returns new document objects; never mutates the input. */
+function mergeClaudeChanges(localDocs, remoteProject, changes, localNextId) {
+  const out = localDocs.map(d => ({ ...d }));
+  const byId = new Map(out.map(d => [d.id, d]));
+  const remoteById = new Map(remoteProject.docs.map(d => [d.id, d]));
+  const touched = new Set();
+  const updated = [];
+  const conflicts = [];
+
+  for (const [idKey, fields] of Object.entries(changes.docs || {})) {
+    const local = byId.get(Number(idKey));
+    const remote = remoteById.get(Number(idKey));
+    if (!local || !remote) continue; // you deleted it meanwhile, or the file is odd
+    let changed = false, conflicted = false;
+    for (const [field, beforeHash] of Object.entries(fields)) {
+      if (field === 'snapshots') {
+        const have = new Set((local.snapshots || []).map(s => s.id));
+        const added = (remote.snapshots || []).filter(s => !have.has(s.id));
+        if (added.length) { local.snapshots = [...added, ...(local.snapshots || [])].sort((a, b) => b.id - a.id); changed = true; }
+        continue;
+      }
+      const localHash = folioValueHash(local[field]);
+      if (localHash === folioValueHash(remote[field])) continue; // already the same
+      if (localHash === beforeHash) { local[field] = remote[field]; changed = true; continue; }
+      // You changed this too since Claude read it — keep yours.
+      conflicted = true;
+      if (field === 'content') {
+        local.snapshots = [{
+          id: Date.now(), title: remote.title, content: remote.content || '', words: countWords(remote.content || ''),
+          createdAt: new Date().toISOString(), label: "Claude's version (you were editing at the same time)"
+        }, ...(local.snapshots || [])];
+        changed = true;
+      } else if (field === 'documentNote' && typeof remote.documentNote === 'string') {
+        const claudeNotes = remote.documentNote.split('\n\n').filter(p => p.startsWith('Claude (') && !(local.documentNote || '').includes(p));
+        if (claudeNotes.length) { local.documentNote = [(local.documentNote || '').trim(), ...claudeNotes].filter(Boolean).join('\n\n'); changed = true; }
+      }
+    }
+    if (changed) touched.add(local.id);
+    if (conflicted) conflicts.push(local.title); else if (changed) updated.push(local.title);
+  }
+
+  // New documents Claude created, placed after the same neighbour as in Claude's file.
+  let maxId = Math.max(0, ...out.map(d => d.id));
+  const renumbered = new Map();
+  for (const createdId of changes.created || []) {
+    const remote = remoteById.get(createdId);
+    if (!remote) continue;
+    const existing = byId.get(createdId);
+    if (existing && existing.title === remote.title && existing.content === remote.content) continue; // already here
+    const doc = { ...remote };
+    if (existing) { doc.id = ++maxId; renumbered.set(createdId, doc.id); } // you created a document with the same id meanwhile
+    maxId = Math.max(maxId, doc.id);
+    const remoteIndex = remoteProject.docs.findIndex(d => d.id === createdId);
+    let insertAt = out.length;
+    for (let i = remoteIndex - 1; i >= 0; i--) {
+      const neighbourId = renumbered.get(remoteProject.docs[i].id) ?? remoteProject.docs[i].id;
+      const at = out.findIndex(d => d.id === neighbourId);
+      if (at !== -1) { insertAt = at + 1; break; }
+    }
+    out.splice(insertAt, 0, doc);
+    byId.set(doc.id, doc);
+    touched.add(doc.id);
+    updated.push(`new: ${doc.title}`);
+  }
+  const createdIds = new Set((changes.created || []).map(id => renumbered.get(id) ?? id));
+  for (const doc of out) {
+    if (createdIds.has(doc.id) && renumbered.has(doc.parent)) doc.parent = renumbered.get(doc.parent);
+    if (doc.parent != null && !byId.has(doc.parent)) doc.parent = null;
+  }
+
+  const nextIdOut = Math.max(localNextId || 1, remoteProject.nextId || 1, maxId + 1);
+  return { docs: out, nextId: nextIdOut, touched, updated, conflicts };
+}
+
+async function applyClaudeChanges(data) {
+  const changes = data.claudeChanges;
+  if (!changes || appliedClaudeChangeIds().includes(changes.id)) return false;
+  rememberAppliedClaudeChange(changes.id);
+  const id = data.project.id;
+  if (deletedProjectIds().includes(id)) return false;
+
+  let result;
+  if (id === currentProjectId) {
+    saveCurrentDoc(); // capture what's in the editor right now
+    result = mergeClaudeChanges(docs, data.project, changes, nextId);
+    docs = result.docs.map(d => ({ ...d, createdAt: d.createdAt ? new Date(d.createdAt) : new Date() }));
+    nextId = result.nextId;
+    if (!docs.some(d => d.id === activeId)) activeId = docs[0].id;
+    if (result.touched.has(activeId)) loadDoc(activeId); else { renderTree(); renderSnapshots(); }
+    updateTotals();
+    saveProjectToArchive(); // writes the merged project back, which also clears Claude's change record from the file
+    persistState();
+  } else {
+    const archive = projectArchive();
+    const entry = archive.find(p => p.id === id);
+    if (!entry) {
+      await upsertSyncedProject(data);
+      renderProjects();
+      return true;
+    }
+    result = mergeClaudeChanges(entry.docs, data.project, changes, entry.nextId);
+    entry.docs = result.docs;
+    entry.nextId = result.nextId;
+    entry.updatedAt = new Date().toISOString();
+    writeProjectArchive(archive);
+    await writeProjectToSyncFolder(entry);
+    renderProjects();
+  }
+
+  const name = list => list.slice(0, 3).map(t => `“${t}”`).join(', ') + (list.length > 3 ? ` and ${list.length - 3} more` : '');
+  if (result.conflicts.length) {
+    showFolioToast(`Claude edited ${name(result.conflicts)} while you were too — your version was kept, and Claude's is in History.`);
+  } else if (result.updated.length) {
+    showFolioToast(`Claude updated ${name(result.updated)}${id === currentProjectId ? '' : ` in “${data.project.title}”`}. Earlier versions are in History.`);
+  }
+  return true;
+}
+
+function showFolioToast(message) {
+  let toast = document.getElementById('folio-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'folio-toast';
+    toast.setAttribute('role', 'status');
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add('show');
+  clearTimeout(toast.hideTimer);
+  toast.hideTimer = setTimeout(() => toast.classList.remove('show'), 6000);
 }
 
 /* ────────────────────────────────────────
@@ -3900,7 +4254,7 @@ function setupEventListeners() {
       document.querySelectorAll('.project-card.menu-open').forEach(card => card.classList.remove('menu-open'));
     }
   });
-  document.getElementById('projects-grid').addEventListener('scroll', () => {
+  document.getElementById('projects-scroll').addEventListener('scroll', () => {
     document.querySelectorAll('.project-card-menu.open').forEach(menu => menu.classList.remove('open'));
     document.querySelectorAll('.project-card.menu-open').forEach(card => card.classList.remove('menu-open'));
   }, { passive: true });
