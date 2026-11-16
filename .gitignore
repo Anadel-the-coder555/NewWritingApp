@@ -1,0 +1,7 @@
+# Installed packages (re-created by `npm install`)
+node_modules/
+
+# Electron Forge build output
+out/
+
+.DS_Store

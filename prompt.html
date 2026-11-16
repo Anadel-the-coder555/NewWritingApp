@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Folio</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 14px -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; }
+  label { display: block; margin-bottom: 8px; }
+  input { width: 100%; box-sizing: border-box; padding: 6px 8px; font: inherit; }
+  .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  button { font: inherit; padding: 4px 14px; }
+</style>
+</head>
+<body>
+<form id="f">
+  <label id="msg" for="val"></label>
+  <input id="val" autofocus>
+  <div class="buttons">
+    <button type="button" id="cancel">Cancel</button>
+    <button type="submit">OK</button>
+  </div>
+</form>
+<script>
+  const { ipcRenderer } = require('electron');
+  const params = new URLSearchParams(location.search);
+  document.getElementById('msg').textContent = params.get('message') || '';
+  const input = document.getElementById('val');
+  input.value = params.get('value') || '';
+  input.select();
+  document.getElementById('f').addEventListener('submit', (e) => {
+    e.preventDefault();
+    ipcRenderer.send('folio-prompt-answer', input.value);
+  });
+  document.getElementById('cancel').addEventListener('click', () => ipcRenderer.send('folio-prompt-answer', null));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') ipcRenderer.send('folio-prompt-answer', null); });
+</script>
+</body>
+</html>
