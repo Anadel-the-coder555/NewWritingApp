@@ -807,6 +807,11 @@ function loadDoc(id) {
   activeId = id;
   const d = docs.find(x => x.id === id);
   if (d && d.entityType === 'character') {
+    // Characters have their own card, but the writing page underneath must not keep
+    // showing whatever was open before — after switching books that was the other
+    // book's chapter, which then appeared (and could be typed into) under this book.
+    document.getElementById('doc-title-edit').value = d.title;
+    document.getElementById('editor').innerHTML = '';
     setMode('characters', true);
     renderTree();
     return;
@@ -1742,6 +1747,17 @@ function setMode(mode, skipSave = false) {
   if (mode === 'board')    buildBoard();
   if (mode === 'bible')    buildBible();
   if (mode === 'characters') loadCharacterView();
+
+  // The writing page can't edit a character, so going to it from a character card
+  // opens the book's first chapter instead of a blank page that never saves.
+  if (mode === 'editor') {
+    const active = docs.find(x => x.id === activeId);
+    if (active && active.entityType === 'character') {
+      const target = docs.find(x => x.section === 'manuscript' && !x.isFolder)
+        || docs.find(x => !x.isFolder && x.entityType !== 'character');
+      if (target) loadDoc(target.id);
+    }
+  }
 }
 
 function buildCork() {
@@ -1849,9 +1865,9 @@ function loadCharacterView() {
   const label = activeTab ? activeTab.textContent : 'Physical appearance';
   document.getElementById('char-section-title').textContent = label;
   document.getElementById('char-field-area').value = (d.charFields || {})[field] || '';
-  (d.charPhotos || []).forEach((url, i) => {
-    const slot = document.getElementById('char-photo-' + i);
-    if (slot && url) slot.style.backgroundImage = `url('${url}')`;
+  document.querySelectorAll('.char-photo-slot').forEach((slot, i) => {
+    const url = (d.charPhotos || [])[i];
+    slot.style.backgroundImage = url ? `url('${url}')` : ''; // clear photos left from the previous character
   });
   document.querySelectorAll('.char-tab').forEach(tab => {
     tab.onclick = () => {
