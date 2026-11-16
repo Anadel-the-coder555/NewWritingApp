@@ -217,17 +217,60 @@
     </div>
 
     <!-- Storyboard Room -->
-    <div id="board-view">
-      <canvas id="board-thread"></canvas>
-      <div id="board-canvas"></div>
-      <div id="board-toolbar">
-        <button class="board-tb-btn active" id="board-btn-thread">Red thread</button>
-        <button class="board-tb-btn" id="board-btn-reset">Reset view</button>
-        <span class="board-tb-sep"></span>
-        <span id="board-hint">Drag cards · Pan canvas · Click pin to add to thread</span>
+    <div id="board-view" tabindex="-1">
+      <div id="board-topbar">
+        <div id="board-lens-switch" role="group" aria-label="Arrange the board by">
+          <button data-lens="freeform">Freeform</button>
+          <button data-lens="chapters">Chapters</button>
+          <button data-lens="timeline">Timeline</button>
+        </div>
+        <div id="board-arr-wrap">
+          <label for="board-arr">Arrangement</label>
+          <select id="board-arr"></select>
+          <button class="board-tb-btn" id="board-arr-keep" title="Make this what-if the main arrangement">Use as main</button>
+          <button class="board-tb-btn" id="board-arr-discard" title="Discard this what-if">Discard</button>
+        </div>
+        <div class="board-topbar-end">
+          <button class="board-tb-btn" id="board-btn-thread" title="Lines from characters and places to the scenes that mention them, plus your red thread">Threads</button>
+          <button class="board-tb-btn" id="board-btn-reset">Reset view</button>
+        </div>
       </div>
-      <div id="board-minimap">
-        <canvas id="board-mm-canvas" width="110" height="70"></canvas>
+      <div id="board-body">
+        <aside id="board-tray" aria-label="Loose cards">
+          <h2>Loose cards</h2>
+          <p>Jot anything here. Drag it onto the board when you know where it goes, or leave it. Drag a card back here to set it aside.</p>
+          <label class="board-quick-label" for="board-quick">Quick add</label>
+          <input id="board-quick" type="text" placeholder="A thought… (end with ?)" autocomplete="off">
+          <div id="board-tray-list"></div>
+          <div class="board-tray-foot">
+            <span>Show on board</span>
+            <div id="board-filters"></div>
+          </div>
+        </aside>
+        <div id="board-stage">
+          <div id="board-world"></div>
+          <div id="board-empty" hidden>The board is empty. Drag cards in from Loose cards, or add one below.</div>
+          <div id="board-addbar" role="toolbar" aria-label="Add to board">
+            <button data-add="scene"><span class="bswatch bk-scene"></span>Scene</button>
+            <button data-add="chapter"><span class="bswatch bk-chapter"></span>Chapter</button>
+            <button data-add="event"><span class="bswatch bk-event"></span>Event</button>
+            <button data-add="character"><span class="bswatch bk-character"></span>Character</button>
+            <button data-add="place"><span class="bswatch bk-place"></span>Place</button>
+            <button data-add="idea"><span class="bswatch bk-idea"></span>Idea</button>
+            <button data-add="question"><span class="bswatch bk-question"></span>Question</button>
+            <span class="board-addbar-sep"></span>
+            <button data-add="zone"><span class="bswatch bk-zone"></span>Zone</button>
+          </div>
+          <div id="board-zoom">
+            <button id="board-zoom-out" aria-label="Zoom out">−</button>
+            <button id="board-zoom-level" title="Reset zoom">100%</button>
+            <button id="board-zoom-in" aria-label="Zoom in">+</button>
+          </div>
+          <div id="board-minimap" aria-hidden="true">
+            <canvas id="board-mm-canvas" width="140" height="88"></canvas>
+          </div>
+        </div>
+        <div id="board-lens" hidden></div>
       </div>
     </div>
 

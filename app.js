@@ -1588,287 +1588,882 @@ function saveCharacterView() {
 }
 
 /* ────────────────────────────────────────
-   Storyboard Room
+   Story Board
+   A freeform board for every kind of story card. Nothing needs a date or a
+   chapter to be placed or moved. Positions live on each doc as
+   d.boardPos[arrangementId] = {x, y[, w, h]}, so they save and sync with the
+   project like everything else. Board-only cards (ideas, questions, zones and
+   what-if arrangements) are docs in section 'board', which the binder,
+   manuscript tools and Claude connector all skip.
 ──────────────────────────────────────── */
-let boardPan        = { x: 0, y: 0 };
-let boardShowThread = true;
-let boardPositions  = {};
-let boardIsPanning  = false;
-let boardPanStart   = { x: 0, y: 0 };
-let boardPanOrigin  = { x: 0, y: 0 };
+const BOARD_ARR_KEY    = 'folio-board-arrangement';
+const BOARD_LENS_KEY   = 'folio-board-lens';
+const BOARD_HIDDEN_KEY = 'folio-board-hidden';
+const BOARD_TRIAL_MIN  = 120;   // a drag farther than this becomes a "trying it here"
+const BOARD_KINDS = {
+  scene:     { label: 'Scene',     plural: 'Scenes' },
+  chapter:   { label: 'Chapter',   plural: 'Chapters' },
+  event:     { label: 'Event',     plural: 'Events' },
+  character: { label: 'Character', plural: 'Characters' },
+  place:     { label: 'Place',     plural: 'Places' },
+  object:    { label: 'Object',    plural: 'Objects' },
+  idea:      { label: 'Idea',      plural: 'Ideas' },
+  question:  { label: 'Question',  plural: 'Questions' },
+  zone:      { label: 'Zone',      plural: 'Zones' }
+};
+const BOARD_THREAD_COLORS = ['#4d7ea8', '#c0712f', '#8a5aa8', '#2f8a7a', '#b04a5a', '#6b7a2f'];
 
-function boardDefaultPositions() {
-  const ms = docs.filter(d => d.section === 'manuscript');
-  ms.forEach((d, i) => {
-    if (!boardPositions[d.id]) {
-      const col = i % 3;
-      const row = Math.floor(i / 3);
-      boardPositions[d.id] = {
-        x: 60 + col * 240,
-        y: 60 + row * 320
-      };
-    }
-  });
+let boardPan            = { x: 0, y: 0 };
+let boardZoom           = 1;
+let boardShowThreads    = true;
+let boardTrial          = null;   // { id, from: {x, y} }
+let boardSelected       = null;
+let boardEventsAttached = false;
+let boardParentIds      = new Set();
+let boardMentions       = new Map(); // character id -> Set of scene ids
+let boardAddCount       = 0;
+
+function boardStore(key, value) {
+  try { localStorage.setItem(`${key}:${currentProjectId}`, value); } catch (e) { /* ignore */ }
+}
+function boardRead(key) {
+  try { return localStorage.getItem(`${key}:${currentProjectId}`); } catch (e) { return null; }
 }
 
-let boardEventsAttached = false;
+function boardLens() {
+  const lens = boardRead(BOARD_LENS_KEY);
+  return ['freeform', 'chapters', 'timeline'].includes(lens) ? lens : 'freeform';
+}
+function boardHiddenKinds() {
+  try { return new Set(JSON.parse(boardRead(BOARD_HIDDEN_KEY) || '[]')); } catch (e) { return new Set(); }
+}
+function boardArrangements() {
+  return docs.filter(d => d.section === 'board' && d.boardKind === 'arrangement');
+}
+function boardArrangementId() {
+  const id = boardRead(BOARD_ARR_KEY) || 'main';
+  return id === 'main' || boardArrangements().some(a => String(a.id) === id) ? id : 'main';
+}
+function setBoardArrangement(id) {
+  boardStore(BOARD_ARR_KEY, String(id));
+  boardTrial = null;
+  buildBoard();
+}
+
+function boardKind(d) {
+  if (d.section === 'manuscript') return d.isFolder || boardParentIds.has(d.id) ? 'chapter' : 'scene';
+  if (d.section === 'board') return ['idea', 'question', 'zone'].includes(d.boardKind) ? d.boardKind : null;
+  if (d.entityType === 'character') return 'character';
+  if (d.entityType === 'location')  return 'place';
+  if (d.entityType === 'event')     return 'event';
+  if (d.entityType === 'object')    return 'object';
+  return null;
+}
+function boardPos(d, arr = boardArrangementId()) {
+  return d.boardPos ? d.boardPos[arr] : undefined;
+}
+function setBoardPos(d, pos, arr = boardArrangementId()) {
+  if (!d.boardPos) d.boardPos = {};
+  if (pos) d.boardPos[arr] = pos; else delete d.boardPos[arr];
+}
+function boardText(d, max = 110) {
+  const src = d.synopsis || (d.content || '').replace(/<[^>]+>/g, ' ');
+  const text = src.replace(/\s+/g, ' ').trim();
+  return text.length > max ? text.slice(0, max - 1) + '…' : text;
+}
+function boardDate(value) {
+  if (!value) return '';
+  const date = new Date(value + (value.length === 10 ? 'T00:00:00' : ''));
+  return isNaN(date) ? value : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function boardChapterOf(d) {
+  const parent = d.parent != null ? docs.find(x => x.id === d.parent) : null;
+  return parent && parent.section === 'manuscript' ? parent : null;
+}
+
+/* First visit: lay the manuscript out in chapter columns so the board isn't
+   empty. After that, new cards wait in the Loose cards tray. */
+function ensureBoardLayout() {
+  if (docs.some(d => d.boardPos)) return;
+  const ms = docs.filter(d => d.section === 'manuscript');
+  const chapters = ms.filter(d => boardKind(d) === 'chapter');
+  let col = 0;
+  chapters.forEach(ch => {
+    setBoardPos(ch, { x: 40 + col * 260, y: 90 }, 'main');
+    ms.filter(d => d.parent === ch.id && boardKind(d) === 'scene').forEach((s, i) => {
+      setBoardPos(s, { x: 40 + col * 260, y: 160 + i * 150 }, 'main');
+    });
+    col++;
+  });
+  ms.filter(d => boardKind(d) === 'scene' && !boardPos(d, 'main')).forEach((s, i) => {
+    setBoardPos(s, { x: 40 + (col + (i % 3)) * 260, y: 90 + Math.floor(i / 3) * 150 }, 'main');
+  });
+  docs.forEach(d => { if (boardKind(d) && !d.boardPos) d.boardPos = {}; });
+  schedulePersist();
+}
+
+function computeBoardMentions() {
+  boardMentions = new Map();
+  const scenes = docs.filter(d => d.section === 'manuscript' && !boardParentIds.has(d.id) && !d.isFolder)
+    .map(d => ({ id: d.id, text: (d.title + ' ' + (d.content || '').replace(/<[^>]+>/g, ' ')).toLowerCase() }));
+  docs.filter(d => d.entityType === 'character' || d.entityType === 'location').forEach(e => {
+    const names = [e.title, ...(e.aliases || [])].filter(n => n && n.trim().length > 1).map(n => n.toLowerCase());
+    const hits = new Set(scenes.filter(s => names.some(n => s.text.includes(n))).map(s => s.id));
+    boardMentions.set(e.id, hits);
+  });
+}
 
 function buildBoard() {
-  boardDefaultPositions();
-
-  const view     = document.getElementById('board-view');
-  const canvasEl = document.getElementById('board-canvas');
-  const threadC  = document.getElementById('board-thread');
-
-  const W = view.offsetWidth  || window.innerWidth;
-  const H = view.offsetHeight || window.innerHeight;
-  threadC.width  = W;
-  threadC.height = H;
-  threadC.style.width  = W + 'px';
-  threadC.style.height = H + 'px';
-
-  canvasEl.innerHTML = '';
-  buildBoardCards(canvasEl);
-  drawBoardThread();
-  drawBoardMinimap();
-
-  if (boardEventsAttached) return;
-  boardEventsAttached = true;
-
-  canvasEl.addEventListener('mousedown', e => {
-    if (e.target !== canvasEl) return;
-    boardIsPanning = true;
-    boardPanStart  = { x: e.clientX, y: e.clientY };
-    boardPanOrigin = { ...boardPan };
-    canvasEl.classList.add('grabbing');
-  });
-
-  window.addEventListener('mousemove', e => {
-    if (!boardIsPanning) return;
-    boardPan.x = boardPanOrigin.x + (e.clientX - boardPanStart.x);
-    boardPan.y = boardPanOrigin.y + (e.clientY - boardPanStart.y);
-    updateBoardCardPositions();
-  });
-
-  window.addEventListener('mouseup', () => {
-    if (boardIsPanning) {
-      boardIsPanning = false;
-      canvasEl.classList.remove('grabbing');
-    }
-  });
-
-  document.getElementById('board-btn-thread').addEventListener('click', function() {
-    boardShowThread = !boardShowThread;
-    this.classList.toggle('active', boardShowThread);
-    drawBoardThread();
-  });
-
-  document.getElementById('board-btn-reset').addEventListener('click', () => {
-    boardPan = { x: 0, y: 0 };
-    updateBoardCardPositions();
-  });
+  boardParentIds = new Set(docs.filter(d => d.parent != null).map(d => d.parent));
+  ensureBoardLayout();
+  computeBoardMentions();
+  const lens = boardLens();
+  renderBoardTopbar(lens);
+  renderBoardTray();
+  document.getElementById('board-stage').hidden = lens !== 'freeform';
+  document.getElementById('board-lens').hidden  = lens === 'freeform';
+  if (lens === 'freeform') renderBoardWorld();
+  else if (lens === 'chapters') renderChaptersLens();
+  else renderTimelineLens();
+  attachBoardEvents();
 }
 
-function buildBoardCards(canvasEl) {
-  const ms     = docs.filter(d => d.section === 'manuscript');
-  const dated  = ms.filter(d => d.storyDate).sort((a,b) => new Date(a.storyDate) - new Date(b.storyDate));
-  const undated= ms.filter(d => !d.storyDate);
-  const ordered= [...dated, ...undated];
-
-  ordered.forEach((d, i) => {
-    const el  = document.createElement('div');
-    const pos = boardPositions[d.id];
-    const wc  = countWords(d.content);
-    const num = dated.findIndex(x => x.id === d.id);
-    const numLabel = num >= 0 ? String(num + 1).padStart(2, '0') : '—';
-
-    el.className = 'board-card' + (d.storyDate ? '' : ' undated') +
-                   (d.id === activeId ? ' active' : '');
-    el.dataset.id = d.id;
-    el.style.left = (pos.x + boardPan.x) + 'px';
-    el.style.top  = (pos.y + boardPan.y) + 'px';
-
-    const snippet = d.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
-
-    el.innerHTML = `
-      <div class="board-card-header">
-        <span class="board-card-num">${numLabel}</span>
-        <span class="board-card-title">${d.title}</span>
-        <button class="board-card-thread-btn ${d.inThread ? 'active' : ''}" title="${d.inThread ? 'Remove from red thread' : 'Add to red thread'}"></button>
-        <span class="board-card-pin" style="background:${STATUS_COLORS[d.status]}"></span>
-      </div>
-      ${d.banner
-        ? `<img class="board-card-image" src="${d.banner}" draggable="false">`
-        : `<div class="board-card-no-image"><span class="board-card-no-image-text">no banner</span></div>`
-      }
-      <div class="board-card-body">
-        <div class="board-card-date">${d.storyDate ? new Date(d.storyDate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'undated'}</div>
-        <div class="board-card-synopsis">${snippet || '(empty)'}</div>
-      </div>
-      <div class="board-card-footer">
-        <span class="board-card-wc">${wc > 0 ? wc + ' words' : '—'}</span>
-        <span class="board-card-status">${d.status}</span>
-        <span class="board-card-dot" style="background:${STATUS_COLORS[d.status]}"></span>
-      </div>`;
-
-    makeBoardCardDraggable(el, d.id);
-
-    el.querySelector('.board-card-thread-btn').addEventListener('click', e => {
-      e.stopPropagation();
-      d.inThread = !d.inThread;
-      e.target.classList.toggle('active', d.inThread);
-      e.target.title = d.inThread ? 'Remove from red thread' : 'Add to red thread';
-      drawBoardThread();
-      schedulePersist();
-    });
-
-    el.addEventListener('click', e => {
-      e.stopPropagation();
-      document.querySelectorAll('.board-card').forEach(c => c.classList.remove('active'));
-      el.classList.add('active');
-    });
-
-    el.addEventListener('dblclick', () => {
-      setMode('editor');
-      loadDoc(d.id);
-    });
-
-    canvasEl.appendChild(el);
+/* ── Top bar ── */
+function renderBoardTopbar(lens) {
+  document.querySelectorAll('#board-lens-switch button').forEach(b => {
+    const on = b.dataset.lens === lens;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', String(on));
   });
+  const arr = boardArrangementId();
+  const select = document.getElementById('board-arr');
+  select.innerHTML = `<option value="main">Main</option>` +
+    boardArrangements().map(a => `<option value="${a.id}">${escapeHTML(a.title)}</option>`).join('');
+  select.value = arr;
+  const freeform = lens === 'freeform';
+  document.getElementById('board-arr-wrap').hidden = !freeform;
+  document.getElementById('board-arr-keep').hidden = arr === 'main';
+  document.getElementById('board-arr-discard').hidden = arr === 'main';
+  document.getElementById('board-btn-thread').hidden = !freeform;
+  document.getElementById('board-btn-reset').hidden = !freeform;
+  document.getElementById('board-btn-thread').classList.toggle('active', boardShowThreads);
+  document.getElementById('board-btn-thread').setAttribute('aria-pressed', String(boardShowThreads));
 }
 
-function makeBoardCardDraggable(el, id) {
-  let dragging = false;
-  let startX, startY, startPosX, startPosY;
+/* ── Loose cards tray ── */
+function boardEligible() {
+  return docs.filter(d => boardKind(d));
+}
+function renderBoardTray() {
+  const hidden = boardHiddenKinds();
+  const all = boardEligible();
+  const loose = all.filter(d => !boardPos(d) && !hidden.has(boardKind(d)));
+  const order = Object.keys(BOARD_KINDS);
+  loose.sort((a, b) => order.indexOf(boardKind(a)) - order.indexOf(boardKind(b)));
+  const list = document.getElementById('board-tray-list');
+  list.innerHTML = loose.length
+    ? loose.map(d => {
+        const kind = boardKind(d);
+        const boardOnly = d.section === 'board';
+        return `<div class="btray-item bk-${kind}" draggable="true" data-id="${d.id}">
+          <span class="bcard-kind">${BOARD_KINDS[kind].label}</span>
+          <span class="btray-title">${escapeHTML(d.title || (kind === 'question' ? 'Untitled question' : 'Untitled idea'))}</span>
+          ${boardOnly ? `<button class="btray-del" data-del="${d.id}" title="Delete this ${BOARD_KINDS[kind].label.toLowerCase()}" aria-label="Delete ${escapeHTML(d.title || BOARD_KINDS[kind].label)}">×</button>` : ''}
+        </div>`;
+      }).join('')
+    : `<div class="btray-empty">Everything is on the board. Drag a card here to set it aside.</div>`;
 
-  el.addEventListener('mousedown', e => {
-    if (e.button !== 0) return;
-    if (e.target.closest('.board-card-thread-btn')) return;
-    e.stopPropagation();
-    dragging  = true;
-    startX    = e.clientX;
-    startY    = e.clientY;
-    startPosX = boardPositions[id].x;
-    startPosY = boardPositions[id].y;
-    el.classList.add('dragging');
-
-    const onMove = e => {
-      if (!dragging) return;
-      boardPositions[id].x = startPosX + (e.clientX - startX);
-      boardPositions[id].y = startPosY + (e.clientY - startY);
-      el.style.left = (boardPositions[id].x + boardPan.x) + 'px';
-      el.style.top  = (boardPositions[id].y + boardPan.y) + 'px';
-      drawBoardThread();
-      drawBoardMinimap();
-    };
-
-    const onUp = () => {
-      dragging = false;
-      el.classList.remove('dragging');
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  });
+  const counts = {};
+  all.forEach(d => { const k = boardKind(d); counts[k] = (counts[k] || 0) + 1; });
+  document.getElementById('board-filters').innerHTML = order.filter(k => counts[k]).map(k =>
+    `<button class="bfilter ${hidden.has(k) ? '' : 'on'}" data-kind="${k}" aria-pressed="${!hidden.has(k)}">${BOARD_KINDS[k].plural} ${counts[k]}</button>`
+  ).join('');
 }
 
-function updateBoardCardPositions() {
-  document.querySelectorAll('.board-card').forEach(el => {
-    const id  = +el.dataset.id;
-    const pos = boardPositions[id];
-    if (!pos) return;
-    el.style.left = (pos.x + boardPan.x) + 'px';
-    el.style.top  = (pos.y + boardPan.y) + 'px';
-  });
-  drawBoardThread();
-  drawBoardMinimap();
-}
-
-function getBoardCardCenter(id) {
-  const pos = boardPositions[id];
-  if (!pos) return null;
-  return {
-    x: pos.x + boardPan.x + 100,
-    y: pos.y + boardPan.y + 80
-  };
-}
-
-function drawBoardThread() {
-  const threadC = document.getElementById('board-thread');
-  if (!threadC) return;
-  const ctx = threadC.getContext('2d');
-  ctx.clearRect(0, 0, threadC.width, threadC.height);
-  if (!boardShowThread) return;
-
-  const threaded = docs.filter(d => d.section === 'manuscript' && d.inThread);
-
-  for (let i = 0; i < threaded.length - 1; i++) {
-    const a = getBoardCardCenter(threaded[i].id);
-    const b = getBoardCardCenter(threaded[i + 1].id);
-    if (!a || !b) continue;
-
-    const mx = (a.x + b.x) / 2;
-    const my = (a.y + b.y) / 2 + 20;
-
-    // Thick shadow thread
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.quadraticCurveTo(mx, my, b.x, b.y);
-    ctx.strokeStyle = 'rgba(38,42,36,0.35)';
-    ctx.lineWidth   = 5;
-    ctx.lineCap     = 'round';
-    ctx.stroke();
-
-    // Main thread
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.quadraticCurveTo(mx, my, b.x, b.y);
-    ctx.strokeStyle = 'rgba(95,115,85,0.8)';
-    ctx.lineWidth   = 1.5;
-    ctx.setLineDash([5, 7]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Pin dots
-    [a, b].forEach(pt => {
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, 4.5, 0, Math.PI * 2);
-      ctx.fillStyle = '#5f7355';
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, 2, 0, Math.PI * 2);
-      ctx.fillStyle = '#f7faf5';
-      ctx.fill();
-    });
+/* ── Freeform canvas ── */
+function boardCardHTML(d, kind, pos) {
+  const style = `left:${pos.x}px;top:${pos.y}px`;
+  const sel = boardSelected === d.id ? ' selected' : '';
+  const trying = boardTrial && boardTrial.id === d.id ? ' trying' : '';
+  const remove = `<button class="bcard-x" data-loose="${d.id}" title="Move to Loose cards" aria-label="Move ${escapeHTML(d.title)} to Loose cards">×</button>`;
+  const cls = `bcard bk-${kind}${sel}${trying}`;
+  if (kind === 'chapter') {
+    const n = docs.filter(x => x.parent === d.id).length;
+    return `<div class="${cls}" data-id="${d.id}" style="${style}">
+      <span class="bcard-kind">Chapter</span><span class="bcard-title">${escapeHTML(d.title)}</span>
+      <span class="bcard-count">${n} scene${n === 1 ? '' : 's'}</span>${remove}</div>`;
   }
+  if (kind === 'character') {
+    const photo = d.charPhotos && d.charPhotos.find(Boolean);
+    const n = (boardMentions.get(d.id) || new Set()).size;
+    const color = boardThreadColor(d.id);
+    return `<div class="${cls}" data-id="${d.id}" style="${style}">
+      <span class="bcard-avatar" style="background-color:${color};${photo ? `background-image:url('${photo}')` : ''}">${photo ? '' : escapeHTML((d.title || '?').trim().charAt(0).toUpperCase())}</span>
+      <span class="bcard-who"><span class="bcard-title">${escapeHTML(d.title)}</span><span class="bcard-sub">in ${n} scene${n === 1 ? '' : 's'}</span></span>${remove}</div>`;
+  }
+  if (kind === 'idea' || kind === 'question') {
+    return `<div class="${cls}" data-id="${d.id}" style="${style}">
+      <span class="bcard-kind">${BOARD_KINDS[kind].label}</span>
+      <span class="bcard-title bcard-editable" data-placeholder="${kind === 'idea' ? 'What if…' : 'What do I need to figure out?'}">${escapeHTML(d.title)}</span>${remove}</div>`;
+  }
+  const meta = [];
+  if (kind === 'scene') {
+    const ch = boardChapterOf(d);
+    meta.push(ch ? `<span class="bchip">${escapeHTML(ch.title)}</span>` : `<span class="bchip off">no chapter</span>`);
+    meta.push(d.storyDate ? `<span class="bchip">${boardDate(d.storyDate)}</span>` : `<span class="bchip off">no date</span>`);
+  } else if (d.storyDate) {
+    meta.push(`<span class="bchip">${boardDate(d.storyDate)}</span>`);
+  }
+  const snip = boardText(d, kind === 'scene' ? 110 : 70);
+  const status = kind === 'scene'
+    ? `<span class="bcard-status" style="background:${STATUS_COLORS[d.status] || STATUS_COLORS.draft}" title="${escapeHTML(d.status || 'draft')}"></span>` : '';
+  const thread = kind === 'scene'
+    ? `<button class="bcard-thread ${d.inThread ? 'on' : ''}" data-thread="${d.id}" title="${d.inThread ? 'Take off the red thread' : 'Add to the red thread'}" aria-pressed="${!!d.inThread}" aria-label="Red thread"></button>` : '';
+  return `<div class="${cls}" data-id="${d.id}" style="${style}">
+    <span class="bcard-kind">${BOARD_KINDS[kind].label}${status}</span>
+    <span class="bcard-title">${escapeHTML(d.title)}</span>
+    ${snip ? `<span class="bcard-snip">${escapeHTML(snip)}</span>` : ''}
+    ${meta.length ? `<span class="bcard-meta">${meta.join('')}</span>` : ''}
+    ${thread}${remove}</div>`;
+}
+
+function renderBoardWorld() {
+  const world = document.getElementById('board-world');
+  const hidden = boardHiddenKinds();
+  const placed = boardEligible().filter(d => boardPos(d) && !hidden.has(boardKind(d)));
+  const zones = placed.filter(d => boardKind(d) === 'zone');
+  const cards = placed.filter(d => boardKind(d) !== 'zone');
+
+  const zoneHTML = zones.map(z => {
+    const p = boardPos(z);
+    return `<div class="bzone${boardSelected === z.id ? ' selected' : ''}" data-id="${z.id}" style="left:${p.x}px;top:${p.y}px;width:${p.w || 360}px;height:${p.h || 300}px">
+      <span class="bzone-label bcard-editable" data-placeholder="Name this zone">${escapeHTML(z.title)}</span>
+      <button class="bcard-x" data-loose="${z.id}" title="Move to Loose cards" aria-label="Move zone ${escapeHTML(z.title)} to Loose cards">×</button>
+      <span class="bzone-resize" aria-hidden="true"></span>
+    </div>`;
+  }).join('');
+
+  let trialHTML = '';
+  const trialDoc = boardTrial && docs.find(d => d.id === boardTrial.id);
+  if (trialDoc && boardPos(trialDoc)) {
+    const now = boardPos(trialDoc);
+    trialHTML = `<div class="bghost" style="left:${boardTrial.from.x}px;top:${boardTrial.from.y}px">
+        <span class="bcard-kind">Was here</span><span>${escapeHTML(trialDoc.title)}</span></div>
+      <div class="btrial" style="left:${now.x}px;top:${now.y}px" role="group" aria-label="Trying it here">
+        <span>Trying it here</span>
+        <button data-trial="keep" class="primary">Keep</button>
+        <button data-trial="back">Put back</button>
+        <button data-trial="both" title="Save this as a what-if arrangement and keep the original too">Keep both</button>
+      </div>`;
+  } else {
+    boardTrial = null;
+  }
+
+  world.innerHTML = `<div class="bzones">${zoneHTML}</div>
+    <svg id="board-threads" class="bthreads" width="1" height="1" aria-hidden="true"></svg>
+    ${trialHTML}
+    ${cards.map(d => boardCardHTML(d, boardKind(d), boardPos(d))).join('')}`;
+
+  document.getElementById('board-empty').hidden = placed.length > 0;
+  applyBoardTransform();
+}
+
+function applyBoardTransform() {
+  const world = document.getElementById('board-world');
+  world.style.transform = `translate(${boardPan.x}px, ${boardPan.y}px) scale(${boardZoom})`;
+  document.getElementById('board-zoom-level').textContent = Math.round(boardZoom * 100) + '%';
+  const stage = document.getElementById('board-stage');
+  stage.style.backgroundPosition = `${boardPan.x}px ${boardPan.y}px`;
+  stage.style.backgroundSize = `${22 * boardZoom}px ${22 * boardZoom}px`;
+  drawBoardThreads();
+  drawBoardMinimap();
+}
+
+function boardThreadColor(id) {
+  const chars = docs.filter(d => d.entityType === 'character');
+  const i = Math.max(0, chars.findIndex(d => d.id === id));
+  return BOARD_THREAD_COLORS[i % BOARD_THREAD_COLORS.length];
+}
+
+function boardCenter(el) {
+  return { x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight / 2 };
+}
+
+function drawBoardThreads() {
+  const svg = document.getElementById('board-threads');
+  if (!svg) return;
+  if (!boardShowThreads) { svg.innerHTML = ''; return; }
+  const els = {};
+  document.querySelectorAll('#board-world .bcard').forEach(el => { els[el.dataset.id] = el; });
+  const paths = [];
+  const curve = (a, b) => {
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2 + Math.min(80, Math.abs(a.x - b.x) * 0.15);
+    return `M${a.x} ${a.y} Q${mx} ${my} ${b.x} ${b.y}`;
+  };
+  boardMentions.forEach((sceneIds, entityId) => {
+    const from = els[entityId];
+    if (!from) return;
+    const entity = docs.find(d => d.id === entityId);
+    const color = entity && entity.entityType === 'location' ? '#2f8a7a' : boardThreadColor(entityId);
+    const focus = boardSelected == null || boardSelected === entityId || sceneIds.has(boardSelected);
+    sceneIds.forEach(sid => {
+      const to = els[sid];
+      if (!to) return;
+      paths.push(`<path d="${curve(boardCenter(from), boardCenter(to))}" stroke="${color}" stroke-width="${focus && boardSelected != null ? 2.5 : 1.75}" fill="none" opacity="${focus ? 0.75 : 0.12}"/>`);
+    });
+  });
+  const threaded = docs.filter(d => d.section === 'manuscript' && d.inThread && els[d.id]);
+  for (let i = 0; i < threaded.length - 1; i++) {
+    paths.push(`<path d="${curve(boardCenter(els[threaded[i].id]), boardCenter(els[threaded[i + 1].id]))}" stroke="#b04a3a" stroke-width="2" stroke-dasharray="6 6" fill="none" opacity=".85"/>`);
+  }
+  if (boardTrial) {
+    const el = els[boardTrial.id];
+    if (el) {
+      const to = boardCenter(el);
+      const from = { x: boardTrial.from.x + 90, y: boardTrial.from.y + 40 };
+      paths.push(`<path d="${curve(from, to)}" stroke="var(--accent)" stroke-width="2" stroke-dasharray="5 5" fill="none"/>`);
+    }
+  }
+  svg.innerHTML = paths.join('');
 }
 
 function drawBoardMinimap() {
-  const mmC  = document.getElementById('board-mm-canvas');
-  const view = document.getElementById('board-view');
-  if (!mmC || !view) return;
-
-  const ctx   = mmC.getContext('2d');
-  const W     = view.offsetWidth  || 600;
-  const H     = view.offsetHeight || 400;
-  const scaleX = 110 / W;
-  const scaleY = 70  / H;
-
-  ctx.fillStyle = '#262a24';
-  ctx.fillRect(0, 0, 110, 70);
-
-  docs.filter(d => d.section === 'manuscript').forEach(d => {
-    const pos = boardPositions[d.id];
-    if (!pos) return;
-    const mx = (pos.x + boardPan.x) * scaleX;
-    const my = (pos.y + boardPan.y) * scaleY;
-    ctx.fillStyle  = STATUS_COLORS[d.status];
-    ctx.globalAlpha = d.storyDate ? 0.85 : 0.3;
-    ctx.fillRect(mx, my, 10, 6);
-    ctx.globalAlpha = 1;
+  const c = document.getElementById('board-mm-canvas');
+  const stage = document.getElementById('board-stage');
+  if (!c || !stage) return;
+  const ctx = c.getContext('2d');
+  const W = c.width, H = c.height;
+  ctx.clearRect(0, 0, W, H);
+  const rects = [...document.querySelectorAll('#board-world .bcard, #board-world .bzone')]
+    .map(el => ({ x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight, zone: el.classList.contains('bzone') }));
+  const view = { x: -boardPan.x / boardZoom, y: -boardPan.y / boardZoom, w: stage.clientWidth / boardZoom, h: stage.clientHeight / boardZoom };
+  const all = [...rects, view];
+  const minX = Math.min(...all.map(r => r.x)), minY = Math.min(...all.map(r => r.y));
+  const maxX = Math.max(...all.map(r => r.x + r.w)), maxY = Math.max(...all.map(r => r.y + r.h));
+  const s = Math.min((W - 8) / (maxX - minX || 1), (H - 8) / (maxY - minY || 1));
+  const tx = x => 4 + (x - minX) * s, ty = y => 4 + (y - minY) * s;
+  const css = getComputedStyle(document.documentElement);
+  rects.forEach(r => {
+    ctx.fillStyle = r.zone ? 'rgba(127,140,120,.18)' : (css.getPropertyValue('--text-faint').trim() || '#879181');
+    ctx.fillRect(tx(r.x), ty(r.y), Math.max(2, r.w * s), Math.max(2, r.h * s));
   });
+  ctx.strokeStyle = css.getPropertyValue('--accent').trim() || '#5f7355';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(tx(view.x), ty(view.y), view.w * s, view.h * s);
+}
+
+/* Screen point → board coordinates */
+function boardWorldPoint(clientX, clientY) {
+  const r = document.getElementById('board-stage').getBoundingClientRect();
+  return { x: (clientX - r.left - boardPan.x) / boardZoom, y: (clientY - r.top - boardPan.y) / boardZoom };
+}
+
+function boardOverTray(clientX, clientY) {
+  const r = document.getElementById('board-tray').getBoundingClientRect();
+  return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+}
+
+function startBoardDrag(e, d, el, mode) {
+  const pos = boardPos(d);
+  if (!pos) return;
+  const start = { x: e.clientX, y: e.clientY };
+  const orig = { ...pos };
+  const tray = document.getElementById('board-tray');
+  let moved = false;
+  // Moving a zone carries the cards sitting inside it.
+  let riders = [];
+  if (mode === 'move' && boardKind(d) === 'zone') {
+    const w = pos.w || 360, h = pos.h || 300;
+    riders = [...document.querySelectorAll('#board-world .bcard')].map(cardEl => {
+      const c = boardCenter(cardEl);
+      if (c.x < pos.x || c.x > pos.x + w || c.y < pos.y || c.y > pos.y + h) return null;
+      const doc = docs.find(x => x.id === +cardEl.dataset.id);
+      return doc ? { doc, el: cardEl, orig: { ...boardPos(doc) } } : null;
+    }).filter(Boolean);
+  }
+
+  const onMove = ev => {
+    const dx = (ev.clientX - start.x) / boardZoom, dy = (ev.clientY - start.y) / boardZoom;
+    if (!moved && Math.hypot(dx, dy) < 3) return;
+    if (!moved) {
+      moved = true;
+      el.classList.add('dragging');
+      document.querySelectorAll('#board-world .btrial').forEach(t => t.remove());
+    }
+    if (mode === 'resize') {
+      pos.w = Math.max(160, Math.round(orig.w + dx));
+      pos.h = Math.max(120, Math.round(orig.h + dy));
+      el.style.width = pos.w + 'px';
+      el.style.height = pos.h + 'px';
+    } else {
+      pos.x = Math.round(orig.x + dx);
+      pos.y = Math.round(orig.y + dy);
+      el.style.left = pos.x + 'px';
+      el.style.top = pos.y + 'px';
+      riders.forEach(r => {
+        const rp = boardPos(r.doc);
+        rp.x = r.orig.x + Math.round(dx);
+        rp.y = r.orig.y + Math.round(dy);
+        r.el.style.left = rp.x + 'px';
+        r.el.style.top = rp.y + 'px';
+      });
+      tray.classList.toggle('drop-target', boardOverTray(ev.clientX, ev.clientY));
+    }
+    drawBoardThreads();
+  };
+
+  const onUp = ev => {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+    el.classList.remove('dragging');
+    tray.classList.remove('drop-target');
+    if (!moved) return;
+    if (mode === 'move' && boardOverTray(ev.clientX, ev.clientY)) {
+      setBoardPos(d, null);
+      if (boardTrial && boardTrial.id === d.id) boardTrial = null;
+      renderBoardTray();
+    } else if (mode === 'move' && boardKind(d) !== 'zone') {
+      const from = boardTrial && boardTrial.id === d.id ? boardTrial.from : orig;
+      const far = Math.hypot(pos.x - from.x, pos.y - from.y) > BOARD_TRIAL_MIN;
+      // Starting to try a different card keeps whatever the last try was.
+      boardTrial = far ? { id: d.id, from } : (boardTrial && boardTrial.id === d.id ? null : boardTrial);
+    }
+    renderBoardWorld();
+    schedulePersist();
+  };
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+}
+
+function resolveBoardTrial(action) {
+  if (!boardTrial) return;
+  const d = docs.find(x => x.id === boardTrial.id);
+  if (d && action === 'back') {
+    const pos = boardPos(d);
+    pos.x = boardTrial.from.x;
+    pos.y = boardTrial.from.y;
+  }
+  if (d && action === 'both') {
+    const current = boardArrangementId();
+    const n = boardArrangements().length + 1;
+    const arr = {
+      id: nextId++, title: `What-if ${n}: ${(d.title || 'card').slice(0, 30)} moved`,
+      section: 'board', boardKind: 'arrangement', content: '', synopsis: '', status: 'draft',
+      target: 0, storyDate: '', banner: '', tags: [], parent: null, isFolder: false, createdAt: new Date()
+    };
+    docs.push(arr);
+    docs.forEach(x => {
+      const p = boardPos(x, current);
+      if (p) setBoardPos(x, { ...p }, String(arr.id));
+    });
+    const original = boardPos(d, current);
+    original.x = boardTrial.from.x;
+    original.y = boardTrial.from.y;
+    boardTrial = null;
+    schedulePersist();
+    setBoardArrangement(arr.id);
+    return;
+  }
+  boardTrial = null;
+  renderBoardWorld();
+  schedulePersist();
+}
+
+function editBoardText(el, d) {
+  el.contentEditable = 'true';
+  el.focus();
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  const before = d.title;
+  const finish = cancel => {
+    el.contentEditable = 'false';
+    el.removeEventListener('blur', onBlur);
+    el.removeEventListener('keydown', onKey);
+    d.title = cancel ? before : el.textContent.trim();
+    if (!cancel && !d.title && d.section !== 'board') d.title = before || 'Untitled';
+    el.textContent = d.title;
+    if (d.section !== 'board') renderTree();
+    renderBoardTray();
+    drawBoardThreads();
+    schedulePersist();
+  };
+  const onBlur = () => finish(false);
+  const onKey = ev => {
+    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); el.blur(); }
+    if (ev.key === 'Escape') { ev.preventDefault(); finish(true); }
+  };
+  el.addEventListener('blur', onBlur);
+  el.addEventListener('keydown', onKey);
+}
+
+function openFromBoard(d) {
+  if (d.section === 'board') return;
+  if (d.entityType === 'character') { loadDoc(d.id); return; }
+  setMode('editor');
+  loadDoc(d.id);
+}
+
+function addBoardCard(kind, placeAt) {
+  const base = { content: '', synopsis: '', status: 'draft', target: 0, storyDate: '', banner: '', tags: [], parent: null, isFolder: false, createdAt: new Date(), boardPos: {} };
+  let d;
+  if (kind === 'scene')   d = { ...base, title: 'New scene', section: 'manuscript' };
+  if (kind === 'chapter') d = { ...base, title: 'New chapter', section: 'manuscript', isFolder: true };
+  if (['character', 'place', 'event', 'object'].includes(kind)) {
+    const type = kind === 'place' ? 'location' : kind;
+    d = { ...base, title: `New ${BOARD_KINDS[kind].label.toLowerCase()}`, entityType: type, aliases: [], tags: [type], section: 'research' };
+  }
+  if (['idea', 'question', 'zone'].includes(kind)) {
+    d = { ...base, title: kind === 'zone' ? 'New zone' : '', section: 'board', boardKind: kind };
+  }
+  if (!d) return;
+  d.id = nextId++;
+  docs.push(d);
+  if (placeAt !== false) {
+    const stage = document.getElementById('board-stage');
+    const offset = (boardAddCount++ % 6) * 24;
+    const p = placeAt || {
+      x: Math.round((stage.clientWidth / 2 - boardPan.x) / boardZoom - 100 + offset),
+      y: Math.round((stage.clientHeight / 2 - boardPan.y) / boardZoom - 60 + offset)
+    };
+    setBoardPos(d, kind === 'zone' ? { x: p.x - 80, y: p.y - 80, w: 360, h: 300 } : p);
+  }
+  if (d.section !== 'board') renderTree();
+  schedulePersist();
+  return d;
+}
+
+/* ── Chapters lens: the only place the board changes the manuscript ── */
+function renderChaptersLens() {
+  const lens = document.getElementById('board-lens');
+  const ms = docs.filter(d => d.section === 'manuscript');
+  const chapters = ms.filter(d => boardKind(d) === 'chapter');
+  const scenes = ms.filter(d => boardKind(d) === 'scene');
+  const chapterIds = new Set(chapters.map(c => c.id));
+  const columns = chapters.map(ch => ({ id: ch.id, title: ch.title, items: scenes.filter(s => s.parent === ch.id) }));
+  columns.push({ id: '', title: 'No chapter yet', items: scenes.filter(s => !chapterIds.has(s.parent)), loose: true });
+  const card = s => `<div class="blens-card" draggable="true" data-id="${s.id}">
+      <span class="bcard-kind">Scene<span class="bcard-status" style="background:${STATUS_COLORS[s.status] || STATUS_COLORS.draft}"></span></span>
+      <span class="bcard-title">${escapeHTML(s.title)}</span>
+      ${s.storyDate ? `<span class="bcard-meta"><span class="bchip">${boardDate(s.storyDate)}</span></span>` : ''}
+    </div>`;
+  lens.innerHTML = `<p class="blens-hint">Drag scenes between chapters to change the manuscript. Scenes without a chapter have their own column.</p>
+    <div class="blens-cols">${columns.map(col => `
+      <section class="blens-col${col.loose ? ' loose' : ''}" data-chapter="${col.id}">
+        <h3>${escapeHTML(col.title)}<span>${col.items.length}</span></h3>
+        <div class="blens-list">${col.items.map(card).join('') || '<div class="blens-empty">Drop scenes here</div>'}</div>
+      </section>`).join('')}</div>`;
+}
+
+function moveSceneToChapter(id, chapterId, beforeId) {
+  const d = docs.find(x => x.id === id);
+  if (!d || d.id === beforeId) return;
+  docs.splice(docs.indexOf(d), 1);
+  d.parent = chapterId || null;
+  let at;
+  if (beforeId) at = docs.findIndex(x => x.id === beforeId);
+  else {
+    const siblings = docs.filter(x => x.section === 'manuscript' && (x.parent || null) === d.parent && !x.isFolder && !boardParentIds.has(x.id));
+    const last = siblings[siblings.length - 1];
+    at = last ? docs.indexOf(last) + 1 : (chapterId ? docs.findIndex(x => x.id === chapterId) + 1 : docs.length);
+  }
+  docs.splice(at < 0 ? docs.length : at, 0, d);
+  renderTree();
+  buildBoard();
+}
+
+/* ── Timeline lens: dates are optional ── */
+function renderTimelineLens() {
+  const lens = document.getElementById('board-lens');
+  const items = docs.filter(d => ['scene', 'event'].includes(boardKind(d)));
+  const dated = items.filter(d => d.storyDate).sort((a, b) => String(a.storyDate).localeCompare(String(b.storyDate)));
+  const undated = items.filter(d => !d.storyDate && boardKind(d) === 'scene');
+  const card = d => {
+    const kind = boardKind(d);
+    return `<button class="blens-card bk-${kind}" data-open="${d.id}">
+      <span class="bcard-kind">${BOARD_KINDS[kind].label}</span>
+      <span class="bcard-title">${escapeHTML(d.title)}</span>
+    </button>`;
+  };
+  lens.innerHTML = `<p class="blens-hint">Dated scenes and events sit on the line. Scenes without a date stay in story order underneath. Nothing has to have a date.</p>
+    <div class="btl">
+      ${dated.length ? `<div class="btl-row">${dated.map(d => `<div class="btl-stop"><span class="btl-date">${boardDate(d.storyDate)}</span><span class="btl-dot bk-${boardKind(d)}"></span>${card(d)}</div>`).join('')}</div>`
+        : '<div class="blens-empty">No dates yet. Add a story date to any scene or event to place it here.</div>'}
+      <section class="btl-sometime">
+        <h3>Sometime · in story order<span>${undated.length}</span></h3>
+        <div class="btl-row">${undated.map(card).join('') || '<div class="blens-empty">Every scene has a date.</div>'}</div>
+      </section>
+    </div>`;
+}
+
+/* ── Events (attached once) ── */
+function attachBoardEvents() {
+  if (boardEventsAttached) return;
+  boardEventsAttached = true;
+  const view  = document.getElementById('board-view');
+  const stage = document.getElementById('board-stage');
+  const world = document.getElementById('board-world');
+  const tray  = document.getElementById('board-tray');
+  const lens  = document.getElementById('board-lens');
+
+  document.getElementById('board-lens-switch').addEventListener('click', e => {
+    const b = e.target.closest('button[data-lens]');
+    if (!b) return;
+    boardStore(BOARD_LENS_KEY, b.dataset.lens);
+    buildBoard();
+  });
+  document.getElementById('board-arr').addEventListener('change', e => setBoardArrangement(e.target.value));
+  document.getElementById('board-arr-keep').addEventListener('click', () => {
+    const arr = boardArrangementId();
+    if (arr === 'main') return;
+    if (!confirm('Make this what-if the main arrangement? The current main layout will be replaced.')) return;
+    docs.forEach(d => { if (d.boardPos) { const p = d.boardPos[arr]; setBoardPos(d, p ? { ...p } : null, 'main'); delete d.boardPos[arr]; } });
+    docs = docs.filter(d => String(d.id) !== arr);
+    schedulePersist();
+    setBoardArrangement('main');
+  });
+  document.getElementById('board-arr-discard').addEventListener('click', () => {
+    const arr = boardArrangementId();
+    if (arr === 'main' || !confirm('Discard this what-if arrangement? The main arrangement stays as it is.')) return;
+    docs.forEach(d => { if (d.boardPos) delete d.boardPos[arr]; });
+    docs = docs.filter(d => String(d.id) !== arr);
+    schedulePersist();
+    setBoardArrangement('main');
+  });
+  document.getElementById('board-btn-thread').addEventListener('click', () => {
+    boardShowThreads = !boardShowThreads;
+    renderBoardTopbar(boardLens());
+    drawBoardThreads();
+  });
+  document.getElementById('board-btn-reset').addEventListener('click', () => {
+    boardPan = { x: 0, y: 0 };
+    boardZoom = 1;
+    applyBoardTransform();
+  });
+  document.getElementById('board-zoom-out').addEventListener('click', () => zoomBoardAt(boardZoom / 1.2));
+  document.getElementById('board-zoom-in').addEventListener('click', () => zoomBoardAt(boardZoom * 1.2));
+  document.getElementById('board-zoom-level').addEventListener('click', () => zoomBoardAt(1));
+
+  document.getElementById('board-addbar').addEventListener('click', e => {
+    const b = e.target.closest('button[data-add]');
+    if (!b) return;
+    if (boardLens() !== 'freeform') boardStore(BOARD_LENS_KEY, 'freeform');
+    const d = addBoardCard(b.dataset.add);
+    buildBoard();
+    const el = world.querySelector(`[data-id="${d.id}"] .bcard-title, [data-id="${d.id}"] .bzone-label`);
+    if (el) editBoardText(el, d);
+  });
+
+  // Quick add: Enter makes an idea in the tray; start with "?" for a question.
+  document.getElementById('board-quick').addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    const text = e.target.value.trim();
+    if (!text) return;
+    const isQ = text.startsWith('?') || text.endsWith('?');
+    const d = addBoardCard(isQ ? 'question' : 'idea', false);
+    d.title = text.replace(/^\?\s*/, '');
+    e.target.value = '';
+    schedulePersist();
+    renderBoardTray();
+  });
+
+  document.getElementById('board-filters').addEventListener('click', e => {
+    const b = e.target.closest('button[data-kind]');
+    if (!b) return;
+    const hidden = boardHiddenKinds();
+    if (hidden.has(b.dataset.kind)) hidden.delete(b.dataset.kind); else hidden.add(b.dataset.kind);
+    boardStore(BOARD_HIDDEN_KEY, JSON.stringify([...hidden]));
+    buildBoard();
+  });
+
+  // Tray: drag cards out onto the board, delete board-only cards.
+  tray.addEventListener('dragstart', e => {
+    const item = e.target.closest('.btray-item');
+    if (!item) return;
+    e.dataTransfer.setData('text/folio-board', item.dataset.id);
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  tray.addEventListener('click', e => {
+    const del = e.target.closest('[data-del]');
+    if (!del) return;
+    const d = docs.find(x => x.id === +del.dataset.del);
+    if (!d || d.section !== 'board') return;
+    if (!confirm(`Delete this ${BOARD_KINDS[boardKind(d)].label.toLowerCase()}? This can't be undone.`)) return;
+    docs = docs.filter(x => x.id !== d.id);
+    schedulePersist();
+    renderBoardTray();
+  });
+  stage.addEventListener('dragover', e => {
+    if (e.dataTransfer.types.includes('text/folio-board')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+  });
+  stage.addEventListener('drop', e => {
+    const id = +e.dataTransfer.getData('text/folio-board');
+    const d = docs.find(x => x.id === id);
+    if (!d) return;
+    e.preventDefault();
+    const p = boardWorldPoint(e.clientX, e.clientY);
+    const at = { x: Math.round(p.x - 90), y: Math.round(p.y - 30) };
+    setBoardPos(d, boardKind(d) === 'zone' ? { ...at, w: 360, h: 300 } : at);
+    schedulePersist();
+    buildBoard();
+  });
+
+  // Canvas: drag cards and zones, pan the background.
+  stage.addEventListener('mousedown', e => {
+    if (e.button !== 0 || e.target.closest('button, [contenteditable="true"], #board-addbar, #board-zoom, #board-minimap')) return;
+    // preventDefault below stops the browser moving focus, so commit any open card edit first.
+    if (document.activeElement && document.activeElement.isContentEditable && stage.contains(document.activeElement)) document.activeElement.blur();
+    const resize = e.target.closest('.bzone-resize');
+    const card = e.target.closest('.bcard');
+    const zoneLabel = e.target.closest('.bzone-label');
+    const zone = e.target.closest('.bzone');
+    const target = card || (zone && (zoneLabel || resize) ? zone : null);
+    if (target) {
+      e.preventDefault();
+      const d = docs.find(x => x.id === +target.dataset.id);
+      if (!d) return;
+      if (boardSelected !== d.id) {
+        boardSelected = d.id;
+        document.querySelectorAll('#board-world .selected').forEach(x => x.classList.remove('selected'));
+        target.classList.add('selected');
+        drawBoardThreads();
+      }
+      startBoardDrag(e, d, target, resize ? 'resize' : 'move');
+      return;
+    }
+    // Background (or a zone's body): pan.
+    e.preventDefault();
+    const start = { x: e.clientX, y: e.clientY }, orig = { ...boardPan };
+    let moved = false;
+    stage.classList.add('grabbing');
+    const onMove = ev => {
+      if (!moved && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 3) return;
+      moved = true;
+      boardPan = { x: orig.x + ev.clientX - start.x, y: orig.y + ev.clientY - start.y };
+      applyBoardTransform();
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      stage.classList.remove('grabbing');
+      if (!moved && boardSelected != null) {
+        boardSelected = null;
+        document.querySelectorAll('#board-world .selected').forEach(x => x.classList.remove('selected'));
+        drawBoardThreads();
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  });
+
+  stage.addEventListener('click', e => {
+    const trial = e.target.closest('[data-trial]');
+    if (trial) { resolveBoardTrial(trial.dataset.trial); return; }
+    const loose = e.target.closest('[data-loose]');
+    if (loose) {
+      const d = docs.find(x => x.id === +loose.dataset.loose);
+      if (d) setBoardPos(d, null);
+      if (boardTrial && d && boardTrial.id === d.id) boardTrial = null;
+      schedulePersist();
+      renderBoardWorld();
+      renderBoardTray();
+      return;
+    }
+    const thread = e.target.closest('[data-thread]');
+    if (thread) {
+      const d = docs.find(x => x.id === +thread.dataset.thread);
+      if (!d) return;
+      d.inThread = !d.inThread;
+      thread.classList.toggle('on', d.inThread);
+      thread.setAttribute('aria-pressed', String(d.inThread));
+      thread.title = d.inThread ? 'Take off the red thread' : 'Add to the red thread';
+      drawBoardThreads();
+      schedulePersist();
+    }
+  });
+
+  stage.addEventListener('dblclick', e => {
+    const item = e.target.closest('.bcard, .bzone');
+    if (!item || e.target.closest('button')) return;
+    const d = docs.find(x => x.id === +item.dataset.id);
+    if (!d) return;
+    if (d.section === 'board') {
+      const el = item.querySelector('.bcard-editable');
+      if (el && (item.classList.contains('bcard') || e.target.closest('.bzone-label'))) editBoardText(el, d);
+      return;
+    }
+    openFromBoard(d);
+  });
+
+  // Trackpad: two-finger scroll pans, pinch (or ⌘/Ctrl + scroll) zooms.
+  stage.addEventListener('wheel', e => {
+    if (boardLens() !== 'freeform') return;
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      zoomBoardAt(boardZoom * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+    } else {
+      boardPan.x -= e.deltaX;
+      boardPan.y -= e.deltaY;
+      applyBoardTransform();
+    }
+  }, { passive: false });
+
+  // Lenses
+  lens.addEventListener('click', e => {
+    const open = e.target.closest('[data-open]');
+    if (open) { const d = docs.find(x => x.id === +open.dataset.open); if (d) openFromBoard(d); }
+  });
+  lens.addEventListener('dblclick', e => {
+    const card = e.target.closest('.blens-card[data-id]');
+    if (card) { const d = docs.find(x => x.id === +card.dataset.id); if (d) openFromBoard(d); }
+  });
+  lens.addEventListener('dragstart', e => {
+    const card = e.target.closest('.blens-card[data-id]');
+    if (!card) return;
+    e.dataTransfer.setData('text/folio-scene', card.dataset.id);
+    e.dataTransfer.effectAllowed = 'move';
+    card.classList.add('dragging');
+  });
+  lens.addEventListener('dragend', e => {
+    lens.querySelectorAll('.dragging, .drop-before, .drop-col').forEach(x => x.classList.remove('dragging', 'drop-before', 'drop-col'));
+  });
+  lens.addEventListener('dragover', e => {
+    if (!e.dataTransfer.types.includes('text/folio-scene')) return;
+    const col = e.target.closest('.blens-col');
+    if (!col) return;
+    e.preventDefault();
+    lens.querySelectorAll('.drop-before, .drop-col').forEach(x => x.classList.remove('drop-before', 'drop-col'));
+    const card = e.target.closest('.blens-card[data-id]');
+    if (card && !card.classList.contains('dragging')) card.classList.add('drop-before');
+    else col.classList.add('drop-col');
+  });
+  lens.addEventListener('drop', e => {
+    const id = +e.dataTransfer.getData('text/folio-scene');
+    const col = e.target.closest('.blens-col');
+    if (!id || !col) return;
+    e.preventDefault();
+    const card = e.target.closest('.blens-card[data-id]');
+    moveSceneToChapter(id, col.dataset.chapter ? +col.dataset.chapter : null, card ? +card.dataset.id : null);
+  });
+
+  window.addEventListener('resize', () => { if (currentMode === 'board') drawBoardMinimap(); });
+  view.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && boardTrial && !e.target.closest('[contenteditable="true"], input')) resolveBoardTrial('back');
+  });
+}
+
+function zoomBoardAt(z, clientX, clientY) {
+  const stage = document.getElementById('board-stage');
+  const r = stage.getBoundingClientRect();
+  const cx = clientX == null ? r.width / 2 : clientX - r.left;
+  const cy = clientY == null ? r.height / 2 : clientY - r.top;
+  const next = Math.max(0.3, Math.min(2, z));
+  boardPan.x = cx - (cx - boardPan.x) * (next / boardZoom);
+  boardPan.y = cy - (cy - boardPan.y) * (next / boardZoom);
+  boardZoom = next;
+  applyBoardTransform();
 }
 
 /* ────────────────────────────────────────
