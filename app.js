@@ -3182,6 +3182,8 @@ async function deleteProject(id) {
 
   try { await deleteStoredCover(id); } catch (e) { /* no cover to remove */ }
   localStorage.removeItem(`folio-formatter:${id}`);
+  rememberDeletedProject(id);
+  await removeProjectFromSyncFolder(id);
 
   // If the deleted project was the one currently open in the editor (it always is,
   // since the shelf this menu lives in is the app's default view), swap in another
@@ -3354,6 +3356,7 @@ async function importProjectFile(file) {
     }
   };
 
+  forgetDeletedProject(normalized.project.id); // importing on purpose brings a deleted project back
   const entry = await upsertSyncedProject(normalized);
 
   if (wasCurrent) {
@@ -3403,6 +3406,32 @@ function syncFilenameMap() {
 }
 function setSyncFilenameMap(map) {
   try { localStorage.setItem('folio-sync-filenames', JSON.stringify(map)); } catch (e) { /* ignore */ }
+}
+
+/* Ids of projects the user deleted. Without this, scanSyncFolder() would find the
+   deleted project's leftover .folio file, see a project it doesn't know, and
+   import it straight back. */
+function deletedProjectIds() {
+  try { return JSON.parse(localStorage.getItem('folio-deleted-projects') || '[]'); } catch (e) { return []; }
+}
+function rememberDeletedProject(id) {
+  const ids = deletedProjectIds();
+  if (!ids.includes(id)) ids.push(id);
+  try { localStorage.setItem('folio-deleted-projects', JSON.stringify(ids)); } catch (e) { /* ignore */ }
+}
+function forgetDeletedProject(id) {
+  const ids = deletedProjectIds().filter(x => x !== id);
+  try { localStorage.setItem('folio-deleted-projects', JSON.stringify(ids)); } catch (e) { /* ignore */ }
+}
+
+async function removeProjectFromSyncFolder(id) {
+  const map = syncFilenameMap();
+  const name = map[id];
+  delete map[id];
+  setSyncFilenameMap(map);
+  if (!name || !syncFolderHandle) return;
+  if (!(await ensureSyncFolderPermission(syncFolderHandle, false))) return; // scanSyncFolder() cleans it up later
+  try { await syncFolderHandle.removeEntry(name); } catch (e) { /* already gone */ }
 }
 
 async function writeProjectToSyncFolder(project) {
@@ -3514,6 +3543,7 @@ async function scanSyncFolder() {
   if (!granted) return;
 
   const archive = projectArchive();
+  const deletedIds = deletedProjectIds();
   const conflicts = [];
   let importedAny = false;
 
@@ -3523,6 +3553,12 @@ async function scanSyncFolder() {
       let data;
       try { data = JSON.parse(await (await entry.getFile()).text()); } catch (e) { continue; }
       if (!data || !data.folioFile || !data.project || !data.project.id) continue;
+
+      // A project the user deleted: clear out its leftover file instead of re-importing it.
+      if (deletedIds.includes(data.project.id)) {
+        try { await syncFolderHandle.removeEntry(entry.name); } catch (e) { /* ignore */ }
+        continue;
+      }
 
       const local = archive.find(p => p.id === data.project.id);
       if (!local) {
