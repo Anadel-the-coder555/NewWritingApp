@@ -202,7 +202,7 @@ function applyAccentColor(hex, persist = true, dark = colorMode === 'dark') {
     root.setProperty('--color-accent-800', dark ? toward('white', 80) : toward('black', 62));
     if (persist) localStorage.setItem(ACCENT_KEY, hex);
   }
-  const shown = hex || PALETTE_ACCENTS[currentPalette] || PALETTE_ACCENTS.sage;
+  const shown = hex || PALETTE_ACCENTS[document.documentElement.getAttribute('data-theme') || currentPalette] || PALETTE_ACCENTS.sage;
   const swatch = document.querySelector('.accent-color-swatch');
   const picker = document.getElementById('accent-color-picker');
   if (swatch) swatch.style.background = shown;
@@ -211,20 +211,32 @@ function applyAccentColor(hex, persist = true, dark = colorMode === 'dark') {
 
 /* Re-renders whatever palette is currently selected using the current light/dark mode. */
 function refreshPalette() {
-  const hex = currentPalette === 'custom' ? (localStorage.getItem(PALETTE_COLOR_KEY) || '#8a5fd6') : (PALETTE_ACCENTS[currentPalette] || PALETTE_ACCENTS.sage);
+  // A background set to "match palette" borrows a palette without changing the saved one.
+  const palette = (bgActive && bgSettings.match && bgSettings.palette) || currentPalette;
+  const hex = palette === 'custom' ? (localStorage.getItem(PALETTE_COLOR_KEY) || '#8a5fd6') : (PALETTE_ACCENTS[palette] || PALETTE_ACCENTS.sage);
   generateScheme(hex, colorMode === 'dark');
-  document.documentElement.setAttribute('data-theme', currentPalette);
-  updateActiveSwatch(currentPalette);
+  document.documentElement.setAttribute('data-theme', palette);
+  updateActiveSwatch(palette);
   applyAccentColor(localStorage.getItem(ACCENT_KEY), false);
 }
 
+/* Picking a palette by hand while a background is matching means "use this one instead". */
+function stopBackgroundMatch() {
+  if (!bgActive || !bgSettings.match) return;
+  bgSettings.match = false;
+  saveBackgroundSettings();
+  syncBackgroundUI();
+}
+
 function applyTheme(id) {
+  stopBackgroundMatch();
   currentPalette = (id && PALETTE_ACCENTS[id]) ? id : 'sage';
   localStorage.setItem(THEME_KEY, currentPalette);
   refreshPalette();
 }
 
 function applyCustomPalette(hex, persist = true) {
+  if (persist) stopBackgroundMatch();
   currentPalette = 'custom';
   if (persist) { localStorage.setItem(THEME_KEY, 'custom'); localStorage.setItem(PALETTE_COLOR_KEY, hex); }
   const dot = document.getElementById('custom-swatch-dot');
@@ -257,6 +269,192 @@ function initTheme() {
   applyTexture(localStorage.getItem(TEXTURE_KEY) || 'none', false);
 }
 
+/* ── Custom background image ──
+   The image lives in IndexedDB (too large for localStorage); its settings in localStorage.
+   With no image saved, html[data-bg] is absent and the palette's own backdrop shows. */
+const BG_SETTINGS_KEY = 'folio-background';
+const BG_DEFAULTS = { blur: 24, clarity: 86, dim: 12, match: true, palette: null, name: '' };
+let bgSettings = { ...BG_DEFAULTS };
+let bgActive = false;
+let bgObjectUrl = null;
+
+function backgroundStore(op, value) {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open('folio-assets', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('files');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      const tx = db.transaction('files', op === 'get' ? 'readonly' : 'readwrite');
+      const store = tx.objectStore('files');
+      const req = op === 'get' ? store.get('background') : op === 'put' ? store.put(value, 'background') : store.delete('background');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+      tx.oncomplete = () => db.close();
+    };
+  });
+}
+
+function saveBackgroundSettings() {
+  try { localStorage.setItem(BG_SETTINGS_KEY, JSON.stringify(bgSettings)); } catch (e) { /* ignore */ }
+}
+
+function hexToHue(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return rgbToHsv((n >> 16) & 255, (n >> 8) & 255, n & 255).h;
+}
+
+function rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), d = max - Math.min(r, g, b);
+  let h = 0;
+  if (d) h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: (h * 60 + 360) % 360, s: max ? d / max : 0, v: max };
+}
+
+/* Picks the built-in palette whose hue the image leans toward most (null for a near-grey image). */
+function matchPaletteToImage(source) {
+  const size = 32;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(source, 0, 0, size, size);
+  const px = ctx.getImageData(0, 0, size, size).data;
+  const candidates = ['sage', 'slate', 'sepia', 'rose', 'ocean'].map(id => ({ id, hue: hexToHue(PALETTE_ACCENTS[id]), weight: 0 }));
+  let total = 0;
+  for (let i = 0; i < px.length; i += 4) {
+    const { h, s, v } = rgbToHsv(px[i], px[i + 1], px[i + 2]);
+    const w = s * v;
+    if (w < 0.08) continue;
+    total += w;
+    let best = candidates[0], bestDist = 999;
+    for (const cand of candidates) {
+      const dist = Math.min(Math.abs(h - cand.hue), 360 - Math.abs(h - cand.hue));
+      if (dist < bestDist) { bestDist = dist; best = cand; }
+    }
+    best.weight += w;
+  }
+  if (total < size * size * 0.04) return null;
+  return candidates.sort((a, b) => b.weight - a.weight)[0].id;
+}
+
+/* Shrinks big photos so storage and repaint stay light. */
+async function prepareBackgroundImage(file) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 2560 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const palette = matchPaletteToImage(bitmap);
+  bitmap.close();
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.88));
+  return { blob, palette };
+}
+
+function applyBackground() {
+  const root = document.documentElement;
+  if (bgActive && bgObjectUrl) {
+    root.setAttribute('data-bg', 'image');
+    root.style.setProperty('--bg-image', `url("${bgObjectUrl}")`);
+    root.style.setProperty('--bg-blur', `${bgSettings.blur}px`);
+    root.style.setProperty('--bg-clarity', `${bgSettings.clarity}%`);
+    root.style.setProperty('--bg-dim', String(bgSettings.dim / 100));
+  } else {
+    root.removeAttribute('data-bg');
+    ['--bg-image', '--bg-blur', '--bg-clarity', '--bg-dim'].forEach(p => root.style.removeProperty(p));
+  }
+  refreshPalette();
+  syncBackgroundUI();
+}
+
+function syncBackgroundUI() {
+  const empty = document.getElementById('bg-empty');
+  const filled = document.getElementById('bg-filled');
+  if (!empty || !filled) return;
+  empty.hidden = bgActive;
+  filled.hidden = !bgActive;
+  if (!bgActive) return;
+  document.getElementById('bg-thumb').src = bgObjectUrl || '';
+  document.getElementById('bg-name').textContent = bgSettings.name || 'Background image';
+  [['blur', 'px'], ['clarity', '%'], ['dim', '%']].forEach(([key, unit]) => {
+    document.getElementById(`bg-${key}`).value = bgSettings[key];
+    document.getElementById(`bg-${key}-out`).textContent = bgSettings[key] + (unit === 'px' ? '' : unit);
+  });
+  document.getElementById('bg-match').checked = bgSettings.match;
+  const note = document.getElementById('bg-match-note');
+  const matched = bgSettings.match && bgSettings.palette;
+  note.hidden = !bgSettings.match;
+  note.textContent = matched
+    ? `${bgSettings.palette[0].toUpperCase()}${bgSettings.palette.slice(1)} picked to match your background.`
+    : 'This image is mostly neutral, so your own palette stays.';
+}
+
+async function setBackgroundFromFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  try {
+    const { blob, palette } = await prepareBackgroundImage(file);
+    await backgroundStore('put', blob);
+    if (bgObjectUrl) URL.revokeObjectURL(bgObjectUrl);
+    bgObjectUrl = URL.createObjectURL(blob);
+    bgSettings = { ...bgSettings, palette, name: file.name, match: bgActive ? bgSettings.match : true };
+    bgActive = true;
+    saveBackgroundSettings();
+    applyBackground();
+  } catch (e) {
+    console.error('Could not set background', e);
+    alert('That image could not be used as a background. Try a JPG, PNG or WebP file.');
+  }
+}
+
+async function removeBackground() {
+  try { await backgroundStore('delete'); } catch (e) { /* ignore */ }
+  if (bgObjectUrl) URL.revokeObjectURL(bgObjectUrl);
+  bgObjectUrl = null;
+  bgActive = false;
+  bgSettings = { ...BG_DEFAULTS };
+  localStorage.removeItem(BG_SETTINGS_KEY);
+  applyBackground();
+}
+
+async function initBackground() {
+  try { bgSettings = { ...BG_DEFAULTS, ...JSON.parse(localStorage.getItem(BG_SETTINGS_KEY) || '{}') }; } catch (e) { bgSettings = { ...BG_DEFAULTS }; }
+  try {
+    const blob = await backgroundStore('get');
+    if (blob) { bgObjectUrl = URL.createObjectURL(blob); bgActive = true; }
+  } catch (e) { /* no stored background */ }
+  applyBackground();
+}
+
+function bindBackgroundControls() {
+  const input = document.getElementById('bg-file-input');
+  const dropzone = document.getElementById('bg-dropzone');
+  const choose = () => input.click();
+  dropzone.addEventListener('click', choose);
+  document.getElementById('bg-replace-btn').addEventListener('click', choose);
+  document.getElementById('bg-remove-btn').addEventListener('click', removeBackground);
+  input.addEventListener('change', () => { setBackgroundFromFile(input.files[0]); input.value = ''; });
+  dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    setBackgroundFromFile(e.dataTransfer.files[0]);
+  });
+  ['blur', 'clarity', 'dim'].forEach(key => {
+    document.getElementById(`bg-${key}`).addEventListener('input', e => {
+      bgSettings[key] = Number(e.target.value);
+      saveBackgroundSettings();
+      applyBackground();
+    });
+  });
+  document.getElementById('bg-match').addEventListener('change', e => {
+    bgSettings.match = e.target.checked;
+    saveBackgroundSettings();
+    applyBackground();
+  });
+}
+
 function toggleSettingsMenu(force) {
   const menu = document.getElementById('settings-menu');
   const open = typeof force === 'boolean' ? force : !menu.classList.contains('open');
@@ -265,6 +463,7 @@ function toggleSettingsMenu(force) {
 
 function init() {
   initTheme();
+  initBackground();
   setEditorZoom(Number(localStorage.getItem(EDITOR_ZOOM_KEY)) || 100, false);
   setBookZoom(Number(localStorage.getItem(BOOK_ZOOM_KEY)) || 100, false);
   loadPersistedState();
@@ -5202,6 +5401,7 @@ function setupEventListeners() {
   document.getElementById('accent-color-picker').addEventListener('input', e => applyAccentColor(e.target.value));
   document.getElementById('accent-reset-btn').addEventListener('click', () => applyAccentColor(null));
   document.querySelectorAll('.texture-swatch[data-texture]').forEach(btn => btn.addEventListener('click', () => applyTexture(btn.dataset.texture)));
+  bindBackgroundControls();
   document.addEventListener('click', e => { if (!e.target.closest('#settings-menu') && !e.target.closest('#btn-settings')) toggleSettingsMenu(false); });
   document.addEventListener('click', e => {
     if (!e.target.closest('.project-more') && !e.target.closest('.project-card-menu')) {

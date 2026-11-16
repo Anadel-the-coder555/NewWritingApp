@@ -2879,3 +2879,72 @@ body.margin-mode #editor-wrap { max-width: 680px; flex: 3 1 480px; }
   animation: folio-transcribing-pulse 1.6s ease-in-out infinite;
 }
 @keyframes folio-transcribing-pulse { 50% { opacity: 0.55; } }
+
+/* ── Custom background image ──
+   Set from Appearance › Background. The image sits on <body>; the chrome turns
+   into frosted glass and the page stays mostly opaque so text keeps its contrast.
+   Without html[data-bg] none of this applies and the palette's backdrop shows. */
+#settings-menu { max-height: calc(100vh - 60px); overflow-y: auto; }
+.bg-section { padding: 4px 13px 6px; }
+.bg-dropzone { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 16px 10px; border: 1.5px dashed var(--border); border-radius: var(--radius-lg); background: transparent; color: var(--text); font: inherit; cursor: pointer; }
+.bg-dropzone svg { color: var(--accent); }
+.bg-dropzone:hover, .bg-dropzone.dragover { border-color: var(--accent); background: var(--accent-bg); }
+.bg-dropzone-title { font-size: 12.5px; font-weight: 500; }
+.bg-dropzone-hint { font-size: 10.5px; color: var(--text-muted); text-align: center; }
+.bg-note { margin-top: 7px; font-size: 11px; line-height: 1.45; color: var(--text-muted); }
+.bg-current { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+#bg-thumb { width: 72px; height: 46px; object-fit: cover; border-radius: var(--radius-md); box-shadow: inset 0 0 0 1px var(--border); flex-shrink: 0; }
+.bg-current-info { min-width: 0; flex: 1; }
+.bg-name { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bg-current-actions { display: flex; gap: 5px; margin-top: 5px; }
+.accent-reset-btn.bg-remove:hover { color: #a3333d; border-color: #a3333d; }
+.bg-slider { display: grid; grid-template-columns: 72px minmax(0, 1fr) 34px; align-items: center; gap: 8px; min-height: 26px; font-size: 11.5px; color: var(--text-muted); }
+.bg-slider input { width: 100%; accent-color: var(--accent); }
+.bg-slider output { font-family: 'DM Mono', monospace; font-size: 10.5px; text-align: right; }
+.bg-match { display: flex; align-items: center; gap: 7px; margin-top: 6px; font-size: 11.5px; color: var(--text); cursor: pointer; }
+.bg-match input { accent-color: var(--accent); }
+
+html[data-bg] body {
+  background:
+    radial-gradient(ellipse 80% 75% at 50% 45%, transparent 55%, rgba(20, 12, 20, 0.35) 100%),
+    linear-gradient(rgba(20, 12, 20, var(--bg-dim, 0.12)), rgba(20, 12, 20, var(--bg-dim, 0.12))),
+    var(--bg-image) center / cover no-repeat,
+    var(--bg);
+}
+html[data-bg] #titlebar,
+html[data-bg] #editor-toolbar,
+html[data-bg] #beats-bar,
+html[data-bg] #sidebar,
+html[data-bg] #inspector,
+html[data-bg] .panel-rail {
+  backdrop-filter: blur(var(--bg-blur, 24px)) saturate(1.3);
+  border-color: color-mix(in srgb, var(--border) 45%, transparent);
+}
+html[data-bg] #titlebar { background: color-mix(in srgb, var(--chrome) 55%, transparent); }
+html[data-bg] #editor-toolbar,
+html[data-bg] #beats-bar { background: color-mix(in srgb, var(--toolbar) 42%, transparent); }
+html[data-bg] #sidebar,
+html[data-bg] #inspector,
+html[data-bg] .panel-rail { background: color-mix(in srgb, var(--chrome) 62%, transparent); }
+html[data-bg] #editor-area,
+html[data-bg] #editor-scroll,
+html[data-bg] #corkboard,
+html[data-bg] #outline-view,
+html[data-bg] #timeline-view,
+html[data-bg] #bible-view,
+html[data-bg] #board-view { background: transparent; }
+html[data-bg] #editor-wrap,
+html[data-bg] #split-reference,
+html[data-bg] #margin-notes {
+  background-color: color-mix(in srgb, var(--surface) var(--bg-clarity, 86%), transparent);
+  backdrop-filter: blur(var(--bg-blur, 24px)) saturate(1.2);
+  border-color: color-mix(in srgb, white 40%, transparent);
+}
+html[data-bg] #editor-wrap { box-shadow: 0 30px 80px rgba(20, 10, 20, 0.3), var(--page-texture-shadow); }
+html[data-bg] #settings-menu,
+html[data-bg] #options-menu {
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(24px);
+}
+/* backdrop-filter traps position:fixed children; let the full-screen notepad escape. */
+html[data-bg] #inspector:has(.document-notepad.fullscreen) { backdrop-filter: none; }

@@ -501,6 +501,35 @@
     <span class="accent-picker-label">Pick your favorite</span>
     <button id="accent-reset-btn" class="accent-reset-btn" title="Reset to palette accent">Reset</button>
   </div>
+  <div class="options-group-label">Background</div>
+  <div class="bg-section">
+    <input type="file" id="bg-file-input" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+    <div id="bg-empty">
+      <button type="button" id="bg-dropzone" class="bg-dropzone">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>
+        <span class="bg-dropzone-title">Upload a background</span>
+        <span class="bg-dropzone-hint">Drop an image here or click · JPG, PNG, WebP</span>
+      </button>
+      <p class="bg-note">No background set — Folio uses your palette's backdrop.</p>
+    </div>
+    <div id="bg-filled" hidden>
+      <div class="bg-current">
+        <img id="bg-thumb" alt="Current background">
+        <div class="bg-current-info">
+          <div id="bg-name" class="bg-name"></div>
+          <div class="bg-current-actions">
+            <button type="button" id="bg-replace-btn" class="accent-reset-btn">Replace</button>
+            <button type="button" id="bg-remove-btn" class="accent-reset-btn bg-remove">Remove</button>
+          </div>
+        </div>
+      </div>
+      <label class="bg-slider"><span>Softness</span><input type="range" id="bg-blur" min="0" max="40" step="2"><output id="bg-blur-out"></output></label>
+      <label class="bg-slider"><span>Page clarity</span><input type="range" id="bg-clarity" min="60" max="100" step="2"><output id="bg-clarity-out"></output></label>
+      <label class="bg-slider"><span>Dim</span><input type="range" id="bg-dim" min="0" max="50" step="2"><output id="bg-dim-out"></output></label>
+      <label class="bg-match"><input type="checkbox" id="bg-match"> Match palette to image</label>
+      <p class="bg-note" id="bg-match-note" hidden></p>
+    </div>
+  </div>
   <div class="options-group-label">Page texture</div>
   <div class="texture-swatch-grid">
     <button class="texture-swatch" data-texture="none" title="Smooth — no texture"><span class="texture-preview texture-preview-none"></span>Smooth</button>
