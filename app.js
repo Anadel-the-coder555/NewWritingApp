@@ -3660,11 +3660,13 @@ function stripInlineSpacing(el) {
   });
 }
 
+const TAB_INDENT = '\u2003\u2003';
+
 function stripLeadingIndent(el) {
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   const node = walker.nextNode();
   if (!node) return;
-  node.textContent = node.textContent.replace(/^[ \t ]+/, '');
+  node.textContent = node.textContent.replace(/^[ \t \u2003]+/, '');
 }
 
 function cleanBookHTML(html) {
@@ -5746,6 +5748,28 @@ function setupEventListeners() {
   });
   document.getElementById('banner-remove').addEventListener('click', removeBanner);
   document.getElementById('banner-upload').addEventListener('change', handleBannerUpload);
+
+  /* Tab indents while writing (instead of jumping to the next button).
+     In a list it nests the item; elsewhere it types an indent of two em spaces. */
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Tab' || e.ctrlKey || e.metaKey || e.altKey) return;
+    const target = e.target;
+    if (!target || !target.isContentEditable) return;
+    e.preventDefault();
+    const sel = window.getSelection();
+    const anchor = sel && sel.anchorNode;
+    const inList = anchor && (anchor.nodeType === 1 ? anchor : anchor.parentElement)?.closest('li');
+    if (inList) { document.execCommand(e.shiftKey ? 'outdent' : 'indent'); return; }
+    if (!e.shiftKey) { document.execCommand('insertText', false, TAB_INDENT); return; }
+    // Shift+Tab removes an indent just before the cursor, if there is one.
+    if (sel.isCollapsed && anchor.nodeType === 3) {
+      const before = anchor.textContent.slice(0, sel.anchorOffset);
+      if (before.endsWith(TAB_INDENT)) {
+        for (let i = 0; i < TAB_INDENT.length; i++) sel.modify('extend', 'backward', 'character');
+        document.execCommand('delete');
+      }
+    }
+  });
 
   /* Keyboard shortcuts */
   document.addEventListener('keydown', e => {
