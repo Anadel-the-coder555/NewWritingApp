@@ -2723,10 +2723,21 @@ function applyFormatterDropCap(prose) {
    which is exactly why the loss went from unnoticeable to constant.
    pageCtx = { current } is mutated in place so the caller sees whichever page
    things ended up on. */
-function splitBlockPreservingFormatting(original, chapter, pageCtx, createPage, overflows, wantsDropCap) {
+function splitBlockPreservingFormatting(original, chapter, pageCtx, createPage, overflows, wantsDropCap, isChapterOpening) {
   let current = pageCtx.current;
   const topTag = original.tagName || 'P';
   let topParagraph = document.createElement(topTag);
+  // Whether any of THIS block's words have successfully landed anywhere yet —
+  // false the whole time this is really just "the paragraph didn't fit at all on
+  // the old page, so it's starting fresh on this one" (a genuine new paragraph,
+  // just delayed to a later page — should indent normally), true only once it's
+  // truly a continuation of content that already exists on an earlier page.
+  let hasPlacedAnyContent = false;
+  // The chapter's true opening paragraph is flush no matter which page it lands
+  // on; every later page this SAME split block continues onto — once it's
+  // actually placed something — is flush too, since that's a continuation, not a
+  // new paragraph, and shouldn't re-indent either.
+  if (isChapterOpening) topParagraph.classList.add('formatter-flush');
   current.prose.appendChild(topParagraph);
   const openChain = []; // inline tag names currently open, outer to inner
   let dropCapPending = Boolean(wantsDropCap);
@@ -2763,9 +2774,15 @@ function splitBlockPreservingFormatting(original, chapter, pageCtx, createPage, 
   }
 
   function newPage() {
+    // An empty topParagraph means nothing from this block ever landed on the
+    // page being left behind (the very first word didn't fit) — nothing to
+    // clean up otherwise, since a topParagraph that DID receive content stays
+    // right where it is.
+    if (!topParagraph.hasChildNodes()) topParagraph.remove();
     current = createPage(chapter, true);
     pageCtx.current = current;
     topParagraph = document.createElement(topTag);
+    if (hasPlacedAnyContent || isChapterOpening) topParagraph.classList.add('formatter-flush');
     current.prose.appendChild(topParagraph);
   }
 
@@ -2781,9 +2798,9 @@ function splitBlockPreservingFormatting(original, chapter, pageCtx, createPage, 
       textNode.textContent = attempt;
       if (overflows(current.page)) {
         textNode.textContent = fitted;
-        if (fitted) maybeApplyDropCap();
+        if (fitted) { maybeApplyDropCap(); hasPlacedAnyContent = true; }
         if (!fitted) textNode.remove();
-        newPage();
+        newPage(); // reads hasPlacedAnyContent as it stands right now, before it's touched again below
         textNode = document.createTextNode('');
         currentTarget().appendChild(textNode);
         fitted = '';
@@ -2792,7 +2809,7 @@ function splitBlockPreservingFormatting(original, chapter, pageCtx, createPage, 
       fitted = attempt;
       idx++;
     }
-    if (fitted) maybeApplyDropCap(); else textNode.remove();
+    if (fitted) { maybeApplyDropCap(); hasPlacedAnyContent = true; } else { textNode.remove(); }
   }
 
   function walk(node) {
@@ -2844,7 +2861,15 @@ function renderFormatter() {
     [...source.childNodes].filter(node => node.nodeType === 1 || node.textContent.trim()).forEach((original, blockIndex) => {
       let block = original.cloneNode(true);
       current.prose.appendChild(block);
-      if (blockIndex === 0 && settings.dropcaps) applyFormatterDropCap(current.prose);
+      if (blockIndex === 0) {
+        // The chapter's true opening paragraph never indents, no matter which
+        // page it visually lands on — CSS :first-child can't tell "the actual
+        // start of the chapter" apart from "just happens to be first on this
+        // particular page", which was stripping the indent from a genuine new
+        // paragraph any time an earlier one filled a page exactly.
+        block.classList.add('formatter-flush');
+        if (settings.dropcaps) applyFormatterDropCap(current.prose);
+      }
       if (!overflows(current.page)) return; // whole block fit — done, full formatting kept
 
       // Doesn't fit whole. Split it right here on THIS page rather than moving the
@@ -2856,7 +2881,7 @@ function renderFormatter() {
       // italic, etc. intact across the split, rather than flattening to plain text.
       block.remove();
       const pageCtx = { current };
-      splitBlockPreservingFormatting(original, chapter, pageCtx, createPage, overflows, blockIndex === 0 && settings.dropcaps);
+      splitBlockPreservingFormatting(original, chapter, pageCtx, createPage, overflows, blockIndex === 0 && settings.dropcaps, blockIndex === 0);
       current = pageCtx.current;
     });
   });
