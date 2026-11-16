@@ -76,6 +76,11 @@ ipcMain.on('folio-prompt', (event, message, defaultValue) => {
 });
 
 app.whenReady().then(() => {
+  // When testing with `npm start`, show the Folio icon in the Dock too.
+  // (The packaged Folio.app gets its icon from forge.config.js instead.)
+  if (process.platform === 'darwin' && !app.isPackaged) {
+    app.dock.setIcon(path.join(__dirname, 'icon', 'icon.png'));
+  }
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

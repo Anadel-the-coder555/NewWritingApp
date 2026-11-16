@@ -6,9 +6,12 @@ module.exports = {
     asar: true,
     name: 'Folio',
     appBundleId: 'local.folio.app',
+    // App icon: Forge adds the right extension (.icns on Mac)
+    icon: 'icon/Folio',
     // Files in this folder that should NOT be copied into Folio.app
     ignore: [
       /^\/Writing app redesign/,
+      /^\/icon($|\/)/,
       /^\/out($|\/)/,
       /^\/forge\.config\.js$/,
       /^\/\.gitignore$/,
