@@ -884,107 +884,8 @@ function saveCurrentDoc() {
 /* ────────────────────────────────────────
    Statistics
 ──────────────────────────────────────── */
-/* Strips HTML down to plain text for character/sentence counting. Decodes the one
-   entity that matters here: a non-breaking space serializes back out of innerHTML as
-   the literal text "&nbsp;" (not the actual space character), which would otherwise
-   glue two words together — and its own letters ("nbsp") would wrongly read as a word. */
-/* Strips content that's invisible on the page but would otherwise leak into raw text:
-   HTML comments, and <style>/<script> blocks (pasted rich text — Word, Google Docs,
-   etc. — routinely embeds a sizeable <style> block of CSS class definitions, which a
-   naive tag-stripping regex has no way to know isn't visible body text). */
-function stripHiddenHtml(html) {
-  const hidden = '(?:<!--[\\s\\S]*?-->|<style[^>]*>[\\s\\S]*?<\\/style>|<script[^>]*>[\\s\\S]*?<\\/script>)';
-  return (html || '')
-    // Hidden content sitting before any real content starts isn't "between" two
-    // words — it's not part of the text at all, so it shouldn't leave a stray
-    // leading space once the surrounding markup is trimmed off.
-    .replace(new RegExp(`^(?:\\s*${hidden})+`, 'i'), '')
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ');
-}
-
-/* Converts HTML to plain text for character counting, preserving whatever whitespace
-   the writer actually typed (a tab or several spaces indenting a paragraph, an old
-   double-space-after-period habit, …) rather than collapsing it away. Only the
-   whitespace introduced by markup itself — a paragraph boundary — gets normalized,
-   to exactly one character, matching how a word processor represents a paragraph
-   break rather than however many tags happen to sit at that boundary. */
-/* Decodes HTML entities (&amp; &lt; &quot; &#39; …) back to real characters. Browsers
-   always serialize a literal "&" in text content as "&amp;" in innerHTML — without
-   this, "Mom & Dad" would be counted as "Mom &amp; Dad" (4 extra characters, plus
-   "amp" reading as a fake extra word since it's a run of letters). A <textarea> is
-   used rather than a generic element because assigning to its innerHTML decodes
-   entities into .value without the text ever being re-parsed as markup. */
-function decodeHtmlEntities(text) {
-  const el = document.createElement('textarea');
-  el.innerHTML = text;
-  return el.value;
-}
-
-function htmlToCountableText(html) {
-  const withBreaks = stripHiddenHtml(html)
-    .replace(/<\/(p|div|h1|h2|h3|blockquote|li)>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '');
-  return decodeHtmlEntities(withBreaks)
-    .replace(/\n{2,}/g, '\n')
-    .replace(/\n/g, ' ')
-    .trimEnd();
-}
-
-/* Finds actual word tokens: runs of letters/digits, with an internal apostrophe
-   allowed so contractions and possessives ("don't", "Ellis's") count as one word.
-   Deliberately does NOT split on whitespace — instead it defines what a word IS and
-   treats literally everything else (spaces, em/en dashes, stray quotes and commas,
-   zero-width joiners, scene-break dots, …) as a separator. That makes it immune to
-   the whole class of "some odd character glues two words together" or "a stray
-   punctuation mark gets counted as its own word" bugs, rather than requiring each
-   troublesome character to be special-cased as it's discovered. */
-function wordTokens(html) {
-  const text = htmlToCountableText(html);
-  return text.match(/[\p{L}\p{N}]+(?:['’\u00AD-][\p{L}\p{N}]+)*/gu) || [];
-}
-
-function countWords(html) {
-  return wordTokens(html).length;
-}
-
-/* Counts paragraphs as non-empty top-level blocks (p, headings, blockquotes, scene
-   breaks, …) — a blank line from an empty <p><br></p> shouldn't count as a paragraph,
-   which raw <p>-tag counting doesn't know to exclude. */
-function countParagraphs(html) {
-  const normalized = stripHiddenHtml(html)
-    .replace(/<\/(p|div|h1|h2|h3|blockquote|li)>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/gi, ' ');
-  return normalized.split('\n').map(l => l.trim()).filter(Boolean).length;
-}
-
-/* Counts sentences. A period/!/? is only a sentence boundary once any closing quotes
-   or brackets after it are accounted for — dialogue routinely ends like `while.”`
-   with no space between the period and the closing quote, which a naive
-   "punctuation then whitespace" split misses, silently merging several sentences
-   into one. */
-/* Common titles/abbreviations whose period isn't a sentence-ender ("Dr. Evendelle
-   said..." is one sentence, not two). Their periods are masked before splitting. */
-const SENTENCE_ABBREVIATIONS = /\b(?:Mr|Mrs|Ms|Mx|Dr|Prof|Sr|Jr|St|Capt|Lt|Gen|Col|Sgt|Cmdr|Adm|Gov|Sen|Rep|Pres|Rev|Fr|Msgr|vs|etc|approx|no|vol|ch|fig|figs|pp|Inc|Ltd|Co)\./g;
-
-function countSentences(text) {
-  if (!text) return 0;
-  let masked = text.replace(SENTENCE_ABBREVIATIONS, m => m.slice(0, -1) + ' ');
-  // Mark an em dash immediately followed by closing quotes/brackets and then a
-  // boundary (interrupted dialogue: `"Wait—" she said.`) as a sentence end, using a
-  // placeholder so the match below can treat it as one more ordinary terminator
-  // instead of needing dash-specific logic. A plain mid-sentence dash ("he turned—
-  // slowly—and walked away") is deliberately left untouched: earlier versions of this
-  // regex excluded "—" from the "ordinary content" character class outright, which
-  // meant any dash NOT immediately followed by closing punctuation had nowhere to
-  // match at all, and the text around it was silently skipped rather than counted.
-  masked = masked.replace(/—([)\]'"’”]+)(?=\s|$)/g, '—$1 ');
-  return (masked.match(/[^.!?… ]+(?:[.!?…]+[)\]'"’”]*| )(?:\s|$)|[^.!?… ]+$/g) || []).length;
-}
+/* Word, character, paragraph and sentence counting lives in counting.js
+   (getTextStats, countWords, wordTokens, …), loaded before this file. */
 
 /* ── World Bible ── */
 function findMentionedEntities(text) {
@@ -1016,11 +917,12 @@ function renderMentions(entities) {
 
 function updateStats() {
   const html    = document.getElementById('editor').innerHTML;
-  const text    = htmlToCountableText(html);
-  const words   = wordTokens(html).length;
-  const chars   = text.length;
-  const paras   = countParagraphs(html);
-  const sentences = countSentences(text);
+  const stats   = getTextStats(html);
+  const text    = stats.text;
+  const words   = stats.words;
+  const chars   = stats.characters;
+  const paras   = stats.paragraphs;
+  const sentences = stats.sentences;
   const readMin = Math.max(1, Math.round(words / 250));
 
   document.getElementById('stat-words').textContent        = words.toLocaleString();

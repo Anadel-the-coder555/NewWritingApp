@@ -14,6 +14,7 @@ module.exports = {
       /^\/icon($|\/)/,
       /^\/out($|\/)/,
       /^\/forge\.config\.js$/,
+      /^\/tests($|\/)/,
       /^\/\.gitignore$/,
     ],
   },
