@@ -2874,7 +2874,8 @@ function handleBannerUpload(e) {
    Focus Mode
 ──────────────────────────────────────── */
 function toggleFocus() {
-  document.body.classList.toggle('focus-mode');
+  const on = document.body.classList.toggle('focus-mode');
+  window.folioWindow?.setButtonsVisible(!on);
 }
 
 /* ────────────────────────────────────────

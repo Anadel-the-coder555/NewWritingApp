@@ -153,6 +153,7 @@ body {
   font-size: 11px;
   color: var(--text-faint);
   letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
 #project-title-input {
@@ -749,6 +750,52 @@ body.focus-mode #doc-title-edit  { font-size: 36px; }
 }
 
 body.focus-mode #focus-exit { display: block; }
+
+/* ── Mac window: no standard title bar ──
+   The top bar is the window's title bar: drag it to move the window,
+   double-click it to zoom. The window buttons sit in its left corner. */
+html.mac-titlebar #titlebar {
+  -webkit-app-region: drag;
+  padding-left: 88px;
+}
+html.mac-titlebar.window-fullscreen #titlebar { padding-left: 20px; }
+/* The window buttons take room, so space the bar a little tighter on smaller windows. */
+@media (max-width: 1440px) {
+  html.mac-titlebar #titlebar { gap: 8px; padding-right: 14px; }
+}
+html.mac-titlebar #titlebar button,
+html.mac-titlebar #titlebar input,
+html.mac-titlebar #titlebar select,
+html.mac-titlebar #titlebar a,
+html.mac-titlebar #wordcount-display { -webkit-app-region: no-drag; }
+/* Focus Mode hides the top bar; keep a thin invisible strip to move the window. */
+html.mac-titlebar body.focus-mode::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 28px;
+  -webkit-app-region: drag;
+  z-index: 1;
+}
+/* Anything that opens over the top bar must take clicks, not drag the window. */
+html.mac-titlebar [id$="-overlay"],
+html.mac-titlebar .utility-overlay,
+html.mac-titlebar #ctx-menu,
+html.mac-titlebar #options-menu,
+html.mac-titlebar #book-controls,
+html.mac-titlebar #folio-toast,
+html.mac-titlebar .document-notepad.fullscreen { -webkit-app-region: no-drag; }
+/* The Projects home screen covers the top bar, so its header does the same job. */
+html.mac-titlebar .projects-header {
+  -webkit-app-region: drag;
+  min-height: 52px;
+  padding-top: 7px;
+  padding-bottom: 7px;
+  padding-left: 88px;
+}
+html.mac-titlebar.window-fullscreen .projects-header { padding-left: 40px; }
+html.mac-titlebar .projects-header button,
+html.mac-titlebar .projects-header input { -webkit-app-region: no-drag; }
 
 /* ── Search Overlay ── */
 #search-overlay {

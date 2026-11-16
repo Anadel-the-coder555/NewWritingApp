@@ -19,6 +19,26 @@ window.folioGemma = {
   chat: request => ipcRenderer.invoke('folio-gemma:chat', request),
 };
 
+// The Mac window has no standard title bar; Folio's top bar stands in for it.
+if (process.platform === 'darwin') {
+  // preload runs before the page exists, so wait for it before tagging <html>.
+  let fullScreen = false;
+  const apply = () => {
+    const root = document.documentElement;
+    if (!root) return;
+    root.classList.add('mac-titlebar');
+    root.classList.toggle('window-fullscreen', fullScreen);
+  };
+  document.addEventListener('DOMContentLoaded', apply);
+  ipcRenderer.on('folio-window:fullscreen', (_e, isFull) => {
+    fullScreen = !!isFull;
+    apply();
+  });
+}
+window.folioWindow = {
+  setButtonsVisible: visible => ipcRenderer.send('folio-window:buttons', visible),
+};
+
 window.prompt = (message, defaultValue) =>
   ipcRenderer.sendSync('folio-prompt', message, defaultValue);
 

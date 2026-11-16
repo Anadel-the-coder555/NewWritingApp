@@ -37,6 +37,12 @@ function createWindow() {
     minWidth: 700,
     minHeight: 500,
     title: 'Folio',
+    // On a Mac, hide the standard title bar and set the red/yellow/green
+    // buttons into Folio's own top bar so the window reads as one surface.
+    ...(process.platform === 'darwin' ? {
+      titleBarStyle: 'hidden',
+      trafficLightPosition: { x: 18, y: 19 },
+    } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       // The page only loads your own local files, so it is safe to let preload.js
@@ -48,6 +54,15 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+
+  // The top bar leaves room for the window buttons, except in full screen
+  // where macOS hides them, so tell the page when that changes.
+  const sendFullScreen = () => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('folio-window:fullscreen', mainWindow.isFullScreen());
+  };
+  mainWindow.on('enter-full-screen', sendFullScreen);
+  mainWindow.on('leave-full-screen', sendFullScreen);
+  mainWindow.webContents.on('did-finish-load', sendFullScreen);
 
   // Before the window closes, let Folio finish saving to the synced folder.
   // Without this, quitting mid-save cut the save off and left a ".crswap" temp
@@ -78,6 +93,12 @@ function createWindow() {
     return { action: 'deny' };
   });
 }
+
+// Focus Mode hides the top bar, so it hides the window buttons with it.
+ipcMain.on('folio-window:buttons', (event, visible) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win && process.platform === 'darwin') win.setWindowButtonVisibility(!!visible);
+});
 
 // ── prompt() stand-in ───────────────────────────────────────────
 // Electron has no built-in prompt(), so app.js calls like prompt('Project name')
