@@ -2902,3 +2902,65 @@ html[data-bg] #options-menu {
 }
 /* backdrop-filter traps position:fixed children; let the full-screen notepad escape. */
 html[data-bg] #inspector:has(.document-notepad.fullscreen) { backdrop-filter: none; }
+
+/* ── Ask Gemma (Story Board chat) ── */
+#board-chat {
+  width: 300px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  background: var(--chrome);
+  border-left: 1px solid var(--border);
+  min-height: 0;
+}
+#board-chat[hidden] { display: none; }
+.bchat-head { display: flex; align-items: center; gap: 8px; padding: 14px 14px 10px; border-bottom: 1px solid var(--border-light); }
+.bchat-head h2 { margin: 0; flex: 1; font: 600 17px 'Playfair Display', serif; }
+#bchat-model {
+  max-width: 120px; height: 26px; font: 12px 'DM Sans', sans-serif;
+  border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text-muted);
+}
+.bchat-close { border: 0; background: none; font-size: 20px; line-height: 1; color: var(--text-muted); cursor: pointer; padding: 2px 4px; }
+.bchat-close:hover { color: var(--text); }
+#bchat-log { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.bchat-intro { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-muted); }
+.bchat-msg { font-size: 13px; line-height: 1.45; padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.bchat-msg.you { align-self: flex-end; max-width: 88%; background: var(--accent-bg); color: var(--text); }
+.bchat-msg.gemma { align-self: stretch; background: var(--surface); border: 1px solid var(--border-light); color: var(--text); }
+.bchat-msg.note { align-self: stretch; background: none; padding: 2px 0; font-size: 12px; color: var(--text-muted); }
+.bchat-msg.error { align-self: stretch; background: none; border: 1px solid var(--border); font-size: 12px; color: var(--text-muted); }
+.bchat-done { margin: 6px 0 0; padding: 0 0 0 14px; font-size: 12px; color: var(--text-muted); }
+.bchat-done li { margin: 2px 0; }
+.bchat-undo { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.bchat-undo button, .bchat-link {
+  font: 12px 'DM Sans', sans-serif; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); border-radius: 5px; padding: 3px 9px; cursor: pointer;
+}
+.bchat-undo button:hover, .bchat-link:hover { border-color: var(--accent); }
+.bchat-undo .bchat-undone { font-size: 12px; color: var(--text-muted); }
+.bchat-thinking { font-size: 12px; color: var(--text-muted); font-style: italic; }
+#bchat-form { padding: 10px 14px 14px; border-top: 1px solid var(--border-light); display: flex; flex-direction: column; gap: 8px; }
+#bchat-input {
+  box-sizing: border-box; width: 100%; resize: none; border: 1px solid var(--border); border-radius: 6px;
+  padding: 7px 9px; font: 13px 'DM Sans', sans-serif; background: var(--surface); color: var(--text);
+}
+#bchat-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.bchat-actions { display: flex; justify-content: space-between; align-items: center; }
+.bchat-link { border-color: transparent; background: none; color: var(--text-muted); padding: 3px 0; }
+#bchat-send {
+  font: 600 13px 'DM Sans', sans-serif; border: 0; border-radius: 6px; padding: 6px 16px;
+  background: var(--accent); color: #fff; cursor: pointer;
+}
+#bchat-send:disabled { opacity: .55; cursor: default; }
+.bcard.gemma-moved { box-shadow: 0 0 0 3px var(--accent); transition: box-shadow .6s; }
+/* Keep the board visible with the chat open: in a narrow window the Loose
+   cards tray steps aside until the chat is closed. */
+#board-body { container-type: inline-size; container-name: board-body; }
+@container board-body (max-width: 980px) {
+  #board-body.chat-open #board-tray { display: none; }
+}
+@container board-body (max-width: 640px) {
+  #board-body.chat-open #board-chat { width: 250px; }
+}
+.bchat-done li.failed { color: #a5503c; }

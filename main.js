@@ -146,6 +146,56 @@ function syncHandler(channel, action) {
   });
 }
 
+/* Gemma, running in Ollama on this Mac. Folio only ever talks to Ollama at
+   localhost, so nothing about the project leaves the computer. Calls go
+   through here rather than the page so Ollama's browser-origin rules don't
+   get in the way. */
+const OLLAMA = 'http://127.0.0.1:11434';
+
+async function ollama(pathname, body, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(OLLAMA + pathname, body
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: controller.signal }
+      : { signal: controller.signal });
+    const text = await res.text();
+    if (!res.ok) {
+      let message = text;
+      try { message = JSON.parse(text).error || text; } catch (e) { /* plain text */ }
+      return { error: `Ollama said: ${message}` };
+    }
+    return { data: JSON.parse(text) };
+  } catch (error) {
+    if (error.name === 'AbortError') return { error: 'Gemma took too long to answer.' };
+    return { error: 'Folio could not reach Ollama. Is it running?', offline: true };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+ipcMain.handle('folio-gemma:models', async () => {
+  const r = await ollama('/api/tags', null, 5000);
+  if (r.error) return r;
+  return { models: (r.data.models || []).map(m => ({
+    name: m.name,
+    tools: !m.capabilities || m.capabilities.includes('tools'),
+    size: m.details && m.details.parameter_size,
+  })) };
+});
+
+ipcMain.handle('folio-gemma:chat', async (event, request) => {
+  const r = await ollama('/api/chat', {
+    model: request.model,
+    messages: request.messages,
+    tools: request.tools,
+    stream: false,
+    think: false,
+    options: { temperature: 0.2 },
+  }, 240000);
+  return r.error ? r : { message: r.data.message };
+});
+
 syncHandler('folio-sync:get-folder', () => syncFolder.getFolder());
 syncHandler('folio-sync:clear-folder', () => { syncFolder.setFolder(null); });
 syncHandler('folio-sync:list', () => syncFolder.list());

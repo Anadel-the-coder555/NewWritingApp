@@ -2773,7 +2773,7 @@ function attachBoardEvents() {
 
   window.addEventListener('resize', () => { if (currentMode === 'board') drawBoardMinimap(); });
   view.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && boardTrial && !e.target.closest('[contenteditable="true"], input')) resolveBoardTrial('back');
+    if (e.key === 'Escape' && boardTrial && !e.target.closest('[contenteditable="true"], input, textarea, select')) resolveBoardTrial('back');
   });
 }
 

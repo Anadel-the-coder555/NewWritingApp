@@ -237,6 +237,7 @@
         <div class="board-topbar-end">
           <button class="board-tb-btn" id="board-btn-thread" title="Lines from characters and places to the scenes that mention them, plus your red thread">Threads</button>
           <button class="board-tb-btn" id="board-btn-reset">Reset view</button>
+          <button class="board-tb-btn" id="board-btn-gemma" aria-pressed="false" aria-controls="board-chat" title="Ask Gemma, running on this Mac, to rearrange the board">Ask Gemma</button>
         </div>
       </div>
       <div id="board-body">
@@ -275,6 +276,23 @@
           </div>
         </div>
         <div id="board-lens" hidden></div>
+        <aside id="board-chat" aria-label="Ask Gemma" hidden>
+          <div class="bchat-head">
+            <h2>Ask Gemma</h2>
+            <select id="bchat-model" aria-label="Gemma model"></select>
+            <button id="bchat-close" class="bchat-close" aria-label="Close Ask Gemma">×</button>
+          </div>
+          <div id="bchat-log" aria-live="polite">
+            <p class="bchat-intro">Tell Gemma how to arrange the board, for example “put all the Mara scenes in a row under the storm idea” or “make a zone called Act two and put chapters 4 to 6 in it”. It runs on this Mac, and you can undo anything it does.</p>
+          </div>
+          <form id="bchat-form">
+            <textarea id="bchat-input" rows="3" placeholder="Move, line up, group or set aside cards…" aria-label="Message to Gemma"></textarea>
+            <div class="bchat-actions">
+              <button type="button" id="bchat-clear" class="bchat-link">New chat</button>
+              <button type="submit" id="bchat-send" class="primary">Send</button>
+            </div>
+          </form>
+        </aside>
       </div>
     </div>
 
@@ -759,5 +777,7 @@
 <script src="transcribe.js"></script>
 <script src="counting.js"></script>
 <script src="app.js"></script>
+<script src="board-assistant.js"></script>
+<script src="board-chat.js"></script>
 </body>
 </html>

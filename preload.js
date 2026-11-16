@@ -13,6 +13,12 @@ window.folioImages = {
   fetch: url => ipcRenderer.invoke('folio-image:fetch', url),
 };
 
+// Gemma in Ollama, for the Story Board chat (requests go through main.js).
+window.folioGemma = {
+  models: () => ipcRenderer.invoke('folio-gemma:models'),
+  chat: request => ipcRenderer.invoke('folio-gemma:chat', request),
+};
+
 window.prompt = (message, defaultValue) =>
   ipcRenderer.sendSync('folio-prompt', message, defaultValue);
 
