@@ -78,18 +78,117 @@ function setBookZoom(value, persist = true) {
   if (persist) saveAppearance({ bookZoom }); // per project, like the editor zoom
 }
 
-function persistState() {
+/* ── Book storage ──
+   Your books (the open one, STORAGE_KEY, and the whole shelf, 'folio-projects') live
+   in IndexedDB, which holds hundreds of megabytes, not localStorage, which is capped
+   near 10 MB for the whole app. Folio keeps a copy in memory so reading is instant;
+   every change is also written to disk straight away, in the order it was made.
+   The first time this version runs, the books are copied over from localStorage,
+   and the localStorage copy is kept up to date as a fallback for as long as the
+   books fit there. If IndexedDB can't be opened at all, Folio carries on with
+   localStorage as before. */
+const BOOK_KEYS = [STORAGE_KEY, 'folio-projects'];
+const BOOK_MIGRATED = 'copied-from-local-storage';
+const bookCache = new Map();
+const bookPendingWrites = new Map(); // key → latest value not yet on disk
+let bookDb = null;                   // null means: fall back to localStorage
+let bookFlushing = null;             // the running write loop, if any
+
+function openBookDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('folio-books', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('kv');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error('Book storage is blocked'));
+  });
+}
+
+function bookDbRequest(db, mode, operation) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('kv', mode, { durability: 'strict' }); // on disk before we call it saved
+    const result = operation(tx.objectStore('kv'));
+    tx.oncomplete = () => resolve(result && result.result);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('Save was cancelled'));
+  });
+}
+
+async function loadBookStore() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      docs, nextId, activeId, currentProjectId,
-      projectTitle: document.getElementById('project-title-input').value,
-      preferences: { typewriterMode, proofingMode, splitMode, marginMode, splitReferenceId }
-    }));
-    reportSave('local', true);
+    const db = await openBookDb();
+    const read = key => bookDbRequest(db, 'readonly', store => store.get(key));
+    if (!(await read(BOOK_MIGRATED))) {
+      // First run with the bigger storage: copy the books across, then mark it done.
+      await bookDbRequest(db, 'readwrite', store => {
+        BOOK_KEYS.forEach(key => {
+          const value = localStorage.getItem(key);
+          if (value != null) store.put(value, key);
+        });
+        store.put(new Date().toISOString(), BOOK_MIGRATED);
+      });
+    }
+    for (const key of BOOK_KEYS) {
+      const value = await read(key);
+      if (value != null) bookCache.set(key, value);
+    }
+    bookDb = db;
   } catch (e) {
-    console.error('Could not save project to local storage', e);
-    reportSave('local', false);
+    console.error('Could not open book storage; using the smaller fallback storage', e);
+    bookDb = null;
+    bookCache.clear();
+    BOOK_KEYS.forEach(key => { try { const v = localStorage.getItem(key); if (v != null) bookCache.set(key, v); } catch (err) { /* unreadable */ } });
   }
+}
+
+function bookGet(key) {
+  return bookCache.has(key) ? bookCache.get(key) : null;
+}
+
+/* Saves a book value. Never throws: success or failure shows in the top bar. */
+function bookSet(key, value) {
+  bookCache.set(key, value);
+  if (!bookDb) {
+    try { localStorage.setItem(key, value); reportSave('local', true); }
+    catch (e) { console.error('Could not save to storage', e); reportSave('local', false); }
+    return;
+  }
+  // Also keep the small localStorage copy current while the books still fit there, so
+  // the fallback is never an old version. Once they outgrow it, drop that copy rather
+  // than leave a stale one behind; the real copy is the one in IndexedDB.
+  try { localStorage.setItem(key, value); } catch (e) { try { localStorage.removeItem(key); } catch (err) { /* ignore */ } }
+  bookPendingWrites.set(key, value);
+  if (!bookFlushing) bookFlushing = flushBookWrites().finally(() => { bookFlushing = null; });
+}
+
+async function flushBookWrites() {
+  while (bookPendingWrites.size) {
+    const batch = [...bookPendingWrites];
+    bookPendingWrites.clear();
+    try {
+      await bookDbRequest(bookDb, 'readwrite', store => batch.forEach(([key, value]) => store.put(value, key)));
+      if (!bookPendingWrites.size) reportSave('local', true);
+    } catch (e) {
+      console.error('Could not save to book storage', e);
+      // Keep the unsaved values queued (newer ones win) and try again shortly.
+      batch.forEach(([key, value]) => { if (!bookPendingWrites.has(key)) bookPendingWrites.set(key, value); });
+      reportSave('local', false);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+  }
+}
+
+/* Resolves once everything saved so far is on disk (or has failed and been reported). */
+async function bookStoreSettled() {
+  for (let tries = 0; bookFlushing && tries < 3; tries++) await Promise.race([bookFlushing, new Promise(r => setTimeout(r, 1500))]);
+}
+
+function persistState() {
+  bookSet(STORAGE_KEY, JSON.stringify({
+    docs, nextId, activeId, currentProjectId,
+    projectTitle: document.getElementById('project-title-input').value,
+    preferences: { typewriterMode, proofingMode, splitMode, marginMode, splitReferenceId }
+  }));
   if (syncFolderHandle) scheduleAutoSync(); // keep the synced-folder copy fresh so Claude reads what you just wrote
 }
 
@@ -113,8 +212,8 @@ function reportSave(where, ok) {
 function saveProblemMessage() {
   if (!saveHealth.local) {
     return syncFolderHandle && saveHealth.folder
-      ? "Folio couldn't save your latest changes on this Mac: its storage is full. Your synced-folder copy is still being updated. Removing big pictures (chapter banners, character photos) frees space."
-      : "Folio couldn't save your latest changes: its storage is full. Keep this window open and export your book from the Projects screen now, then remove big pictures (chapter banners, character photos) to free space.";
+      ? "Folio couldn't save your latest changes on this Mac (it will keep trying). Your synced-folder copy is still being updated. If this keeps happening, check your Mac has free disk space."
+      : "Folio couldn't save your latest changes (it will keep trying). Keep this window open and export your book from the Projects screen now, and check your Mac has free disk space.";
   }
   if (!saveHealth.folder) return "Folio couldn't update your book's copy in the synced folder. Your writing is still saved on this Mac. Check that Dropbox is running and the folder still exists, or click Reconnect on the Projects screen.";
   return '';
@@ -147,7 +246,7 @@ function schedulePersist() {
 function loadPersistedState() {
   let raw;
   try {
-    raw = localStorage.getItem(STORAGE_KEY);
+    raw = bookGet(STORAGE_KEY);
   } catch (e) {
     return false;
   }
@@ -882,6 +981,7 @@ function init() {
       persistState();
       clearTimeout(autoSyncTimer);
       await syncWritesSettled();
+      await bookStoreSettled(); // the last change is on disk before the window closes
       syncWritesClosed = true; // the window is closing: don't start a save that would be cut off
     } catch (e) {
       console.error('Could not finish saving before quit', e);
@@ -3602,7 +3702,7 @@ function exportManuscript() {
 }
 
 function projectArchive() {
-  try { return JSON.parse(localStorage.getItem('folio-projects') || '[]'); } catch { return []; }
+  try { return JSON.parse(bookGet('folio-projects') || '[]'); } catch { return []; }
 }
 
 const coverDatabase = new Promise((resolve, reject) => {
@@ -3636,14 +3736,8 @@ const setSyncFolderHandle = handle => mediaStore('handles', 'readwrite', store =
 const clearSyncFolderHandle = () => mediaStore('handles', 'readwrite', store => store.delete('sync-folder'));
 
 function writeProjectArchive(projects) {
-  try {
-    localStorage.setItem('folio-projects', JSON.stringify(projects));
-    return true;
-  } catch (error) {
-    console.error('Could not save the project shelf', error);
-    reportSave('local', false); // explains itself once, in a message that stays put
-    return false;
-  }
+  bookSet('folio-projects', JSON.stringify(projects)); // a failure shows in the top bar and explains itself
+  return true;
 }
 
 /* Any picture Folio can open (see decodeImageFile), shrunk to cover size. */
@@ -6571,5 +6665,5 @@ function bookFlipBackward() {
   }, 760);
 }
 
-/* ── Start ── */
-init();
+/* ── Start ── (the books are read from storage first) */
+loadBookStore().then(init);
