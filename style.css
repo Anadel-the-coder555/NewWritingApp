@@ -156,6 +156,17 @@ body {
   white-space: nowrap;
 }
 
+#save-status {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  cursor: default;
+}
+#save-status[data-state="pending"] { opacity: 0.7; }
+#save-status[data-state="warn"] { color: #b7791f; font-weight: 600; cursor: pointer; }
+#save-status[data-state="error"] { color: #c0392b; font-weight: 600; cursor: pointer; }
+
 #project-title-input {
   font-family: 'DM Sans', sans-serif;
   font-size: 14px;
@@ -767,7 +778,8 @@ html.mac-titlebar #titlebar button,
 html.mac-titlebar #titlebar input,
 html.mac-titlebar #titlebar select,
 html.mac-titlebar #titlebar a,
-html.mac-titlebar #wordcount-display { -webkit-app-region: no-drag; }
+html.mac-titlebar #wordcount-display,
+html.mac-titlebar #save-status { -webkit-app-region: no-drag; }
 /* Focus Mode hides the top bar; keep a thin invisible strip to move the window. */
 html.mac-titlebar body.focus-mode::before {
   content: '';
@@ -2858,9 +2870,16 @@ body.margin-mode #editor-wrap { max-width: 680px; flex: 3 1 480px; }
   pointer-events: none;
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
+#folio-toast.warning { border-left-color: #c0392b; }
+.folio-toast-close {
+  display: block; margin: 10px 0 0 auto; padding: 4px 14px;
+  font: inherit; font-size: 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface2); color: var(--text);
+}
 #folio-toast.show {
   opacity: 1;
   transform: translateY(0);
+  pointer-events: auto; /* its OK button must be clickable */
 }
 
 /* Placeholder that holds the spot while an audio file is being transcribed */

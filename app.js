@@ -85,13 +85,61 @@ function persistState() {
       projectTitle: document.getElementById('project-title-input').value,
       preferences: { typewriterMode, proofingMode, splitMode, marginMode, splitReferenceId }
     }));
+    reportSave('local', true);
   } catch (e) {
     console.error('Could not save project to local storage', e);
+    reportSave('local', false);
   }
   if (syncFolderHandle) scheduleAutoSync(); // keep the synced-folder copy fresh so Claude reads what you just wrote
 }
 
+/* ── Save status ──
+   Every save reports here, so a failed save is never silent: the top bar says
+   "Saved", "Saving…" or "Not saved", and a failure explains itself once in a
+   message that stays until it's dismissed. 'local' is Folio's own storage on this
+   Mac; 'folder' is the copy in the synced folder (Dropbox). */
+const saveHealth = { local: true, folder: true };
+let savePending = false;
+let saveWarningShown = { local: false, folder: false };
+
+function reportSave(where, ok) {
+  saveHealth[where] = ok;
+  if (where === 'local') savePending = false;
+  if (ok) saveWarningShown[where] = false;
+  else if (!saveWarningShown[where]) { saveWarningShown[where] = true; showSaveProblem(); }
+  renderSaveStatus();
+}
+
+function saveProblemMessage() {
+  if (!saveHealth.local) {
+    return syncFolderHandle && saveHealth.folder
+      ? "Folio couldn't save your latest changes on this Mac: its storage is full. Your synced-folder copy is still being updated. Removing big pictures (chapter banners, character photos) frees space."
+      : "Folio couldn't save your latest changes: its storage is full. Keep this window open and export your book from the Projects screen now, then remove big pictures (chapter banners, character photos) to free space.";
+  }
+  if (!saveHealth.folder) return "Folio couldn't update your book's copy in the synced folder. Your writing is still saved on this Mac. Check that Dropbox is running and the folder still exists, or click Reconnect on the Projects screen.";
+  return '';
+}
+
+function showSaveProblem() {
+  const message = saveProblemMessage();
+  if (message) showFolioToast(message, { sticky: true, warning: true });
+}
+
+function renderSaveStatus() {
+  const el = document.getElementById('save-status');
+  if (!el) return;
+  let text = 'Saved', state = 'ok', title = syncFolderHandle ? 'Saved on this Mac and in your synced folder' : 'Saved on this Mac';
+  if (!saveHealth.local) { text = 'Not saved'; state = 'error'; title = saveProblemMessage(); }
+  else if (savePending) { text = 'Saving…'; state = 'pending'; title = 'Saving your latest changes'; }
+  else if (syncFolderHandle && !saveHealth.folder) { text = 'Saved · folder copy failed'; state = 'warn'; title = saveProblemMessage(); }
+  el.textContent = text;
+  el.dataset.state = state;
+  el.title = title;
+}
+
 function schedulePersist() {
+  savePending = true;
+  renderSaveStatus();
   clearTimeout(persistTimer);
   persistTimer = setTimeout(persistState, 300);
 }
@@ -1010,13 +1058,19 @@ function saveCurrentDoc() {
   const d = docs.find(x => x.id === activeId);
   if (!d) return;
   if (d.entityType === 'character') return;
-  d.title     = document.getElementById('doc-title-edit').value || 'Untitled';
-  d.content   = document.getElementById('editor').innerHTML;
-  d.synopsis  = document.getElementById('synopsis-area').value;
-  d.status    = document.getElementById('status-select').value;
-  d.target    = +document.getElementById('target-input').value || 0;
-  d.storyDate = document.getElementById('story-date').value || '';
-  d.banner    = document.getElementById('doc-banner').dataset.url || '';
+  const fresh = {
+    title:     document.getElementById('doc-title-edit').value || 'Untitled',
+    content:   document.getElementById('editor').innerHTML,
+    synopsis:  document.getElementById('synopsis-area').value,
+    status:    document.getElementById('status-select').value,
+    target:    +document.getElementById('target-input').value || 0,
+    storyDate: document.getElementById('story-date').value || '',
+    banner:    document.getElementById('doc-banner').dataset.url || ''
+  };
+  // Only save when something actually changed. The synced-folder autosave calls this
+  // too, and saving unconditionally kept Folio re-saving every couple of seconds forever.
+  if (Object.keys(fresh).every(key => d[key] === fresh[key])) return;
+  Object.assign(d, fresh);
   schedulePersist();
 }
 
@@ -2017,18 +2071,20 @@ function loadCharacterView() {
     input.onchange = e => {
       const file = e.target.files[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = evt => {
-        const d2 = docs.find(x => x.id === activeId);
+      const docId = activeId;
+      prepareStoredPicture(file, 800).then(url => {
+        const d2 = docs.find(x => x.id === docId);
+        if (!d2) return;
         if (!d2.charPhotos) d2.charPhotos = [];
-        d2.charPhotos[i] = evt.target.result;
-        const slot = document.getElementById('char-photo-' + i);
-        slot.style.backgroundImage = `url('${evt.target.result}')`;
-        slot.style.backgroundSize = 'cover';
-        slot.style.backgroundPosition = 'center';
+        d2.charPhotos[i] = url;
+        if (docId === activeId) {
+          const slot = document.getElementById('char-photo-' + i);
+          slot.style.backgroundImage = `url('${url}')`;
+          slot.style.backgroundSize = 'cover';
+          slot.style.backgroundPosition = 'center';
+        }
         schedulePersist();
-      };
-      reader.readAsDataURL(file);
+      }).catch(() => alert(`Folio couldn't open "${file.name}" as a picture. If it's a photo, try exporting it from Photos as a JPEG first.`));
     };
   });
 }
@@ -2992,16 +3048,21 @@ function removeBanner() {
 function handleBannerUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = evt => {
-    const url = evt.target.result;
-    const d = docs.find(x => x.id === activeId);
+  const docId = activeId;
+  // Shrunk like covers: a full-size photo here could fill Folio's storage by itself.
+  prepareStoredPicture(file, 1800).then(url => {
+    const d = docs.find(x => x.id === docId);
     if (d) d.banner = url;
-    setBanner(url);
+    if (docId === activeId) setBanner(url);
     closeBannerPicker();
     schedulePersist();
-  };
-  reader.readAsDataURL(file);
+  }).catch(() => alert(`Folio couldn't open "${file.name}" as a picture. If it's a photo, try exporting it from Photos as a JPEG first.`));
+}
+
+/* Any picture Folio can open, no bigger than maxDimension, as compact WebP text for storage. */
+async function prepareStoredPicture(file, maxDimension) {
+  const source = await decodeImageFile(file);
+  return imageToCanvas(source, maxDimension).toDataURL('image/webp', 0.85);
 }
 
 /* ────────────────────────────────────────
@@ -3579,8 +3640,8 @@ function writeProjectArchive(projects) {
     localStorage.setItem('folio-projects', JSON.stringify(projects));
     return true;
   } catch (error) {
-    console.error('Could not save project covers', error);
-    alert('The cover could not be saved because browser storage is full. Try a smaller image or remove an older cover.');
+    console.error('Could not save the project shelf', error);
+    reportSave('local', false); // explains itself once, in a message that stays put
     return false;
   }
 }
@@ -4662,8 +4723,10 @@ async function writeProjectFileNow(project) {
     }
     map[project.id] = newName;
     setSyncFilenameMap(map);
+    reportSave('folder', true);
   } catch (e) {
     console.error('Could not write to synced folder', e);
+    reportSave('folder', false);
     // A save that fails partway leaves a "<name>.crswap" temp file behind unless aborted.
     if (writable) { try { await writable.abort(); } catch (abortError) { /* ignore */ } }
   }
@@ -5217,7 +5280,7 @@ async function applyClaudeChanges(data) {
   return true;
 }
 
-function showFolioToast(message) {
+function showFolioToast(message, { sticky = false, warning = false } = {}) {
   let toast = document.getElementById('folio-toast');
   if (!toast) {
     toast = document.createElement('div');
@@ -5226,9 +5289,18 @@ function showFolioToast(message) {
     document.body.appendChild(toast);
   }
   toast.textContent = message;
+  toast.classList.toggle('warning', warning);
+  if (sticky) { // stays until dismissed, so a save problem can't flash by unseen
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'folio-toast-close';
+    close.textContent = 'OK';
+    close.addEventListener('click', () => toast.classList.remove('show'));
+    toast.appendChild(close);
+  }
   toast.classList.add('show');
   clearTimeout(toast.hideTimer);
-  toast.hideTimer = setTimeout(() => toast.classList.remove('show'), 6000);
+  if (!sticky) toast.hideTimer = setTimeout(() => toast.classList.remove('show'), 6000);
 }
 
 /* ────────────────────────────────────────
@@ -5681,6 +5753,8 @@ function setupEventListeners() {
   document.getElementById('accent-reset-btn').addEventListener('click', () => applyAccentColor(null));
   document.querySelectorAll('.texture-swatch[data-texture]').forEach(btn => btn.addEventListener('click', () => applyTexture(btn.dataset.texture)));
   bindBackgroundControls();
+  document.getElementById('save-status').addEventListener('click', showSaveProblem);
+  renderSaveStatus();
   document.addEventListener('click', e => { if (!e.target.closest('#settings-menu') && !e.target.closest('#btn-settings')) toggleSettingsMenu(false); });
   document.addEventListener('click', e => {
     if (!e.target.closest('.project-more') && !e.target.closest('.project-card-menu')) {
@@ -6226,6 +6300,7 @@ function closeBookMode() {
     d.content = html;
     document.getElementById('editor').innerHTML = html;
     saveCurrentDoc();
+    schedulePersist(); // d.content was set above, so saveCurrentDoc may see nothing new to save
     updateStats();
     renderTree();
   }
