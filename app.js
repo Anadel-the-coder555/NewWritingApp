@@ -59,7 +59,7 @@ function setEditorZoom(value, persist = true) {
   const zoomIn = document.getElementById('editor-zoom-in');
   if (zoomOut) zoomOut.disabled = editorZoom <= 60;
   if (zoomIn) zoomIn.disabled = editorZoom >= 160;
-  if (persist) localStorage.setItem(EDITOR_ZOOM_KEY, String(editorZoom));
+  if (persist) saveAppearance({ editorZoom }); // per project, like the page width
 }
 
 function setBookZoom(value, persist = true) {
@@ -75,7 +75,7 @@ function setBookZoom(value, persist = true) {
   const zoomIn = document.getElementById('book-zoom-in');
   if (zoomOut) zoomOut.disabled = bookZoom <= 60;
   if (zoomIn) zoomIn.disabled = bookZoom >= 140;
-  if (persist) localStorage.setItem(BOOK_ZOOM_KEY, String(bookZoom));
+  if (persist) saveAppearance({ bookZoom }); // per project, like the editor zoom
 }
 
 function persistState() {
@@ -133,7 +133,7 @@ function loadPersistedState() {
    nothing saved yet uses the defaults (Sage, light, smooth, no background). */
 const APPEARANCE_PREFIX = 'folio-appearance:';
 const APPEARANCE_MIGRATED_KEY = 'folio-appearance-per-project';
-const APPEARANCE_DEFAULTS = { mode: 'light', theme: 'sage', paletteColor: '', accent: '', texture: 'none', pageWidth: 740, pageOpacity: null };
+const APPEARANCE_DEFAULTS = { mode: 'light', theme: 'sage', paletteColor: '', accent: '', texture: 'none', pageWidth: 740, pageOpacity: null, editorZoom: 100, bookZoom: 100 };
 // Before appearance was per project it lived in these app-wide keys; read once to migrate.
 const LEGACY_APPEARANCE_KEYS = { theme: 'folio-theme-mode', accent: 'folio-accent-color', paletteColor: 'folio-palette-color', mode: 'folio-color-mode', texture: 'folio-page-texture' };
 const PALETTE_ACCENTS = { sage: '#5f7355', slate: '#4a6fa5', sepia: '#a1662f', rose: '#a24a68', ocean: '#1f7a8c', midnight: '#6fa8dc' };
@@ -288,6 +288,8 @@ function loadProjectAppearance() {
   applyTexture(appearance.texture, false);
   refreshPalette();
   applyPageLayout();
+  setEditorZoom(Number(appearance.editorZoom) || 100, false);
+  setBookZoom(Number(appearance.bookZoom) || 100, false);
 }
 
 /* Page width and opacity (per project). Opacity left unset means "automatic":
@@ -360,6 +362,8 @@ async function migrateAppearanceToProjects() {
     const value = localStorage.getItem(key);
     if (value) legacy[field] = value;
   });
+  legacy.editorZoom = Number(localStorage.getItem(EDITOR_ZOOM_KEY)) || 100;
+  legacy.bookZoom = Number(localStorage.getItem(BOOK_ZOOM_KEY)) || 100;
   const ids = new Set(projectArchive().map(p => p.id));
   ids.add(currentProjectId);
   ids.forEach(id => { if (!readAppearance(id)) writeAppearance(id, legacy); });
@@ -376,6 +380,24 @@ async function migrateAppearanceToProjects() {
   localStorage.removeItem('folio-background');
   Object.values(LEGACY_APPEARANCE_KEYS).forEach(key => localStorage.removeItem(key));
   localStorage.setItem(APPEARANCE_MIGRATED_KEY, '1');
+}
+
+/* Editor and book zoom used to be app-wide settings, so zooming one novel zoomed every
+   novel. They now live with each project's look; existing projects keep the zoom they had. */
+function migrateZoomToProjects() {
+  [['editorZoom', EDITOR_ZOOM_KEY], ['bookZoom', BOOK_ZOOM_KEY]].forEach(([field, key]) => {
+    const legacy = Number(localStorage.getItem(key));
+    if (!legacy) return;
+    const ids = new Set(projectArchive().map(p => p.id));
+    ids.add(currentProjectId);
+    ids.forEach(id => {
+      let raw = null;
+      try { raw = JSON.parse(localStorage.getItem(APPEARANCE_PREFIX + id) || 'null'); } catch (e) { /* unreadable */ }
+      if (raw && raw[field] != null) return;
+      writeAppearance(id, { ...APPEARANCE_DEFAULTS, ...(raw || {}), [field]: legacy });
+    });
+    localStorage.removeItem(key);
+  });
 }
 
 /* ── Opening pictures ──
@@ -667,12 +689,11 @@ function toggleSettingsMenu(force) {
 }
 
 function init() {
-  setEditorZoom(Number(localStorage.getItem(EDITOR_ZOOM_KEY)) || 100, false);
-  setBookZoom(Number(localStorage.getItem(BOOK_ZOOM_KEY)) || 100, false);
   loadPersistedState();
   ensureUniqueProjectId(); // migrate off the generic 'default' id every install starts with, before anything can compare ids against another device's file
   // Its first, synchronous part copies the old app-wide look into each project before we show it.
   migrateAppearanceToProjects().catch(() => {}).then(loadProjectBackground);
+  migrateZoomToProjects();
   loadProjectAppearance();
   renderTree();
   loadDoc(activeId);
