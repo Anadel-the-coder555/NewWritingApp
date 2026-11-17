@@ -478,11 +478,12 @@ async function imageFileFromDrop(dataTransfer) {
    settings in localStorage. With no image, html[data-bg] is absent and the
    palette's own backdrop shows. */
 const BG_SETTINGS_PREFIX = 'folio-background:';
-const BG_DEFAULTS = { blur: 24, clarity: 86, dim: 12, match: true, palette: null, name: '' };
+const BG_DEFAULTS = { blur: 24, clarity: 86, dim: 12, match: true, palette: null, name: '', zoom: 100, x: 50, y: 50 };
 let bgSettings = { ...BG_DEFAULTS };
 let bgActive = false;
 let bgObjectUrl = null;
 let bgLoadToken = 0;
+let bgImageSize = null; // the picture's own width/height, needed to zoom it while still filling the window
 
 const bgKey = projectId => `background:${projectId}`;
 
@@ -562,13 +563,117 @@ function applyBackground() {
     root.style.setProperty('--bg-image', `url("${bgObjectUrl}")`);
     root.style.setProperty('--bg-blur', `${bgSettings.blur}px`);
     root.style.setProperty('--bg-dim', String(bgSettings.dim / 100));
+    applyBackgroundFit();
   } else {
     root.removeAttribute('data-bg');
-    ['--bg-image', '--bg-blur', '--bg-dim'].forEach(p => root.style.removeProperty(p));
+    ['--bg-image', '--bg-blur', '--bg-dim', '--bg-pos', '--bg-size'].forEach(p => root.style.removeProperty(p));
   }
   refreshPalette();
   syncBackgroundUI();
   applyPageLayout();
+}
+
+/* ── Background fit ──
+   Zoom is how much bigger than "just fills the window" the picture is drawn (100% = fills it);
+   x/y say which part of the picture shows, 0–100% across and down, like background-position. */
+function backgroundDrawSize() {
+  if (!bgImageSize) return null;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const scale = Math.max(vw / bgImageSize.w, vh / bgImageSize.h) * (bgSettings.zoom || 100) / 100;
+  return { w: bgImageSize.w * scale, h: bgImageSize.h * scale, vw, vh };
+}
+
+function applyBackgroundFit() {
+  const root = document.documentElement.style;
+  const size = backgroundDrawSize();
+  root.setProperty('--bg-size', size ? `${Math.ceil(size.w)}px ${Math.ceil(size.h)}px` : 'cover');
+  root.setProperty('--bg-pos', `${bgSettings.x ?? 50}% ${bgSettings.y ?? 50}%`);
+}
+
+function measureBackgroundImage(url) {
+  bgImageSize = null;
+  if (!url) return;
+  const img = new Image();
+  img.onload = () => {
+    if (bgObjectUrl !== url) return; // a different picture took its place meanwhile
+    bgImageSize = { w: img.naturalWidth, h: img.naturalHeight };
+    applyBackgroundFit();
+  };
+  img.src = url;
+}
+
+function setBackgroundFit(patch) {
+  Object.assign(bgSettings, patch);
+  bgSettings.zoom = Math.max(100, Math.min(300, Math.round(bgSettings.zoom)));
+  bgSettings.x = Math.max(0, Math.min(100, bgSettings.x));
+  bgSettings.y = Math.max(0, Math.min(100, bgSettings.y));
+  saveBackgroundSettings();
+  applyBackgroundFit();
+  syncBackgroundFitUI();
+}
+
+function syncBackgroundFitUI() {
+  const zoom = bgSettings.zoom || 100;
+  [['bg-zoom', 'bg-zoom-out'], ['bg-adjust-zoom', 'bg-adjust-zoom-out']].forEach(([input, out]) => {
+    const el = document.getElementById(input);
+    if (!el) return;
+    el.value = zoom;
+    document.getElementById(out).textContent = `${zoom}%`;
+  });
+}
+
+function openBackgroundAdjust() {
+  if (!bgActive) return;
+  toggleSettingsMenu(false);
+  syncBackgroundFitUI();
+  document.body.classList.add('bg-adjusting');
+  document.getElementById('bg-adjust-overlay').hidden = false;
+}
+
+function closeBackgroundAdjust() {
+  document.body.classList.remove('bg-adjusting');
+  document.getElementById('bg-adjust-overlay').hidden = true;
+}
+
+function bindBackgroundFitControls() {
+  const overlay = document.getElementById('bg-adjust-overlay');
+  const bar = overlay.querySelector('.bg-adjust-bar');
+  const resetFit = () => setBackgroundFit({ zoom: 100, x: 50, y: 50 });
+  ['bg-zoom', 'bg-adjust-zoom'].forEach(id => document.getElementById(id).addEventListener('input', e => setBackgroundFit({ zoom: Number(e.target.value) })));
+  document.getElementById('bg-position-btn').addEventListener('click', openBackgroundAdjust);
+  document.getElementById('bg-fit-reset-btn').addEventListener('click', resetFit);
+  document.getElementById('bg-adjust-reset').addEventListener('click', resetFit);
+  document.getElementById('bg-adjust-done').addEventListener('click', closeBackgroundAdjust);
+
+  // Dragging moves the picture with the pointer: a pixel of drag is a pixel of picture.
+  let drag = null;
+  overlay.addEventListener('pointerdown', e => {
+    if (bar.contains(e.target)) return;
+    drag = { x: e.clientX, y: e.clientY, startX: bgSettings.x, startY: bgSettings.y };
+    overlay.setPointerCapture(e.pointerId);
+    overlay.classList.add('dragging');
+  });
+  overlay.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const size = backgroundDrawSize();
+    if (!size) return;
+    const spareW = size.w - size.vw, spareH = size.h - size.vh; // how far the picture can slide
+    const patch = {};
+    if (spareW > 0.5) patch.x = drag.startX - (e.clientX - drag.x) / spareW * 100;
+    if (spareH > 0.5) patch.y = drag.startY - (e.clientY - drag.y) / spareH * 100;
+    setBackgroundFit(patch);
+  });
+  const endDrag = () => { drag = null; overlay.classList.remove('dragging'); };
+  overlay.addEventListener('pointerup', endDrag);
+  overlay.addEventListener('pointercancel', endDrag);
+  overlay.addEventListener('wheel', e => {
+    e.preventDefault();
+    setBackgroundFit({ zoom: (bgSettings.zoom || 100) - e.deltaY * 0.25 });
+  }, { passive: false });
+  document.addEventListener('keydown', e => {
+    if (!overlay.hidden && (e.key === 'Escape' || e.key === 'Enter')) { e.preventDefault(); e.stopPropagation(); closeBackgroundAdjust(); }
+  }, true);
+  window.addEventListener('resize', () => { if (bgActive) applyBackgroundFit(); });
 }
 
 function syncBackgroundUI() {
@@ -585,6 +690,7 @@ function syncBackgroundUI() {
     document.getElementById(`bg-${key}-out`).textContent = bgSettings[key] + (unit === 'px' ? '' : unit);
   });
   document.getElementById('bg-match').checked = bgSettings.match;
+  syncBackgroundFitUI();
   const note = document.getElementById('bg-match-note');
   const matched = bgSettings.match && bgSettings.palette;
   note.hidden = !bgSettings.match;
@@ -607,7 +713,9 @@ async function setBackgroundFromFile(file) {
     bgLoadToken++; // a slower load of the old background must not replace this one
     if (bgObjectUrl) URL.revokeObjectURL(bgObjectUrl);
     bgObjectUrl = URL.createObjectURL(blob);
-    bgSettings = { ...bgSettings, palette, name: file.name, match: bgActive ? bgSettings.match : true };
+    measureBackgroundImage(bgObjectUrl);
+    // A new picture starts centred and filling the window; the old one's fit wouldn't suit it.
+    bgSettings = { ...bgSettings, palette, name: file.name, match: bgActive ? bgSettings.match : true, zoom: 100, x: 50, y: 50 };
     bgActive = true;
     saveBackgroundSettings();
     applyBackground();
@@ -625,8 +733,10 @@ async function removeBackground() {
   if (projectId !== currentProjectId) return;
   if (bgObjectUrl) URL.revokeObjectURL(bgObjectUrl);
   bgObjectUrl = null;
+  bgImageSize = null;
   bgActive = false;
   bgSettings = { ...BG_DEFAULTS };
+  closeBackgroundAdjust();
   applyBackground();
 }
 
@@ -637,6 +747,7 @@ async function loadProjectBackground() {
   const projectId = currentProjectId;
   if (bgObjectUrl) URL.revokeObjectURL(bgObjectUrl);
   bgObjectUrl = null;
+  bgImageSize = null;
   bgActive = false;
   try { bgSettings = { ...BG_DEFAULTS, ...JSON.parse(localStorage.getItem(BG_SETTINGS_PREFIX + projectId) || '{}') }; } catch (e) { bgSettings = { ...BG_DEFAULTS }; }
   applyBackground();
@@ -644,6 +755,7 @@ async function loadProjectBackground() {
   try { blob = await backgroundStore('get', bgKey(projectId)); } catch (e) { /* none saved */ }
   if (token !== bgLoadToken || !blob) return; // another project opened meanwhile, or no background
   bgObjectUrl = URL.createObjectURL(blob);
+  measureBackgroundImage(bgObjectUrl);
   bgActive = true;
   applyBackground();
 }
@@ -680,6 +792,7 @@ function bindBackgroundControls() {
     saveBackgroundSettings();
     applyBackground();
   });
+  bindBackgroundFitControls();
 }
 
 function toggleSettingsMenu(force) {

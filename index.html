@@ -545,6 +545,11 @@
       </div>
       <label class="bg-slider"><span>Softness</span><input type="range" id="bg-blur" min="0" max="40" step="2"><output id="bg-blur-out"></output></label>
       <label class="bg-slider"><span>Dim</span><input type="range" id="bg-dim" min="0" max="50" step="2"><output id="bg-dim-out"></output></label>
+      <label class="bg-slider"><span>Zoom</span><input type="range" id="bg-zoom" min="100" max="300" step="5"><output id="bg-zoom-out"></output></label>
+      <div class="bg-fit-actions">
+        <button type="button" id="bg-position-btn" class="accent-reset-btn">Position picture…</button>
+        <button type="button" id="bg-fit-reset-btn" class="accent-reset-btn">Reset fit</button>
+      </div>
       <label class="bg-match"><input type="checkbox" id="bg-match"> Match palette to image</label>
       <p class="bg-note" id="bg-match-note" hidden></p>
     </div>
@@ -770,6 +775,16 @@
     <button class="book-ctrl-btn" id="book-close">Close ✕</button>
   </div>
 
+</div>
+
+<!-- Background fitting: the app steps aside so the whole picture shows, and dragging moves it. -->
+<div id="bg-adjust-overlay" hidden>
+  <div class="bg-adjust-bar" role="dialog" aria-label="Position background picture">
+    <span class="bg-adjust-hint">Drag to move · scroll to zoom</span>
+    <label class="bg-adjust-zoom"><span>Zoom</span><input type="range" id="bg-adjust-zoom" min="100" max="300" step="5"><output id="bg-adjust-zoom-out"></output></label>
+    <button type="button" id="bg-adjust-reset" class="bg-adjust-btn">Reset</button>
+    <button type="button" id="bg-adjust-done" class="bg-adjust-btn primary">Done</button>
+  </div>
 </div>
 
 <script src="html2canvas.min.js"></script>
