@@ -54,6 +54,12 @@ window.folioNative = {
   remove: name => ipcRenderer.invoke('folio-sync:remove', name),
 };
 
+// Automatic dated backups of each book (handled by backups.js in main.js).
+window.folioBackups = {
+  save: book => ipcRenderer.invoke('folio-backup:save', book),
+  show: () => ipcRenderer.invoke('folio-backup:show'),
+};
+
 // main.js asks for this before the window closes; app.js defines
 // window.folioFlushBeforeQuit to finish any save to the synced folder.
 ipcRenderer.on('folio-flush-before-quit', async () => {

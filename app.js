@@ -190,6 +190,7 @@ function persistState() {
     preferences: { typewriterMode, proofingMode, splitMode, marginMode, splitReferenceId }
   }));
   if (syncFolderHandle) scheduleAutoSync(); // keep the synced-folder copy fresh so Claude reads what you just wrote
+  scheduleBackup();
 }
 
 /* ── Save status ──
@@ -197,16 +198,34 @@ function persistState() {
    "Saved", "Saving…" or "Not saved", and a failure explains itself once in a
    message that stays until it's dismissed. 'local' is Folio's own storage on this
    Mac; 'folder' is the copy in the synced folder (Dropbox). */
-const saveHealth = { local: true, folder: true };
+const saveHealth = { local: true, folder: true, folderBlocked: false };
 let savePending = false;
 let saveWarningShown = { local: false, folder: false };
 
 function reportSave(where, ok) {
   saveHealth[where] = ok;
   if (where === 'local') savePending = false;
+  if (where === 'folder' && ok) saveHealth.folderBlocked = false;
   if (ok) saveWarningShown[where] = false;
   else if (!saveWarningShown[where]) { saveWarningShown[where] = true; showSaveProblem(); }
+  // Once saving works again, the warning has done its job: take it down.
+  if (saveHealth.local && saveHealth.folder) hideFolioToast('save');
   renderSaveStatus();
+}
+
+/* macOS refuses access to the synced folder (it can, after Folio is rebuilt or
+   updated, until the folder is chosen again). Saving there can't recover on its own. */
+function isFolderBlockedError(e) {
+  return /EPERM|EACCES|operation not permitted|permission denied/i.test(String(e && (e.message || e)));
+}
+
+function reportFolderBlocked() {
+  if (!saveHealth.folderBlocked) {
+    saveHealth.folderBlocked = true;
+    saveWarningShown.folder = false; // the advice is different now, so show it
+  }
+  updateSyncFolderUI(true); // shows the Reconnect button
+  reportSave('folder', false);
 }
 
 function saveProblemMessage() {
@@ -215,13 +234,14 @@ function saveProblemMessage() {
       ? "Folio couldn't save your latest changes on this Mac (it will keep trying). Your synced-folder copy is still being updated. If this keeps happening, check your Mac has free disk space."
       : "Folio couldn't save your latest changes (it will keep trying). Keep this window open and export your book from the Projects screen now, and check your Mac has free disk space.";
   }
+  if (!saveHealth.folder && saveHealth.folderBlocked) return "Your Mac is blocking Folio from your synced folder. This can happen after Folio is updated. Your writing is still saved on this Mac. To fix it, open Projects, click Reconnect, then click Use This Folder.";
   if (!saveHealth.folder) return "Folio couldn't update your book's copy in the synced folder. Your writing is still saved on this Mac. Check that Dropbox is running and the folder still exists, or click Reconnect on the Projects screen.";
   return '';
 }
 
 function showSaveProblem() {
   const message = saveProblemMessage();
-  if (message) showFolioToast(message, { sticky: true, warning: true });
+  if (message) showFolioToast(message, { sticky: true, warning: true, kind: 'save' });
 }
 
 function renderSaveStatus() {
@@ -982,6 +1002,8 @@ function init() {
       clearTimeout(autoSyncTimer);
       await syncWritesSettled();
       await bookStoreSettled(); // the last change is on disk before the window closes
+      clearTimeout(backupTimer);
+      await Promise.race([backupAllBooks(), new Promise(r => setTimeout(r, 5000))]); // never hold up quitting for long
       syncWritesClosed = true; // the window is closing: don't start a save that would be cut off
     } catch (e) {
       console.error('Could not finish saving before quit', e);
@@ -1001,6 +1023,7 @@ function init() {
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) scanSyncFolder(); });
   loadSyncFolderHandle();
+  setTimeout(backupAllBooks, 20000); // one backup of every book per launch, once Folio has settled
   openProjects();
 }
 
@@ -4582,6 +4605,45 @@ function createProject() {
 }
 
 /* ────────────────────────────────────────
+   Automatic backups
+   In the desktop app, every book is also copied, as a dated .folio file, into a
+   Backups folder on this Mac, apart from Dropbox (backups.js keeps the trail and
+   thins out old copies). A copy is made about every ten minutes while you write,
+   when Folio starts, and when it quits, and only if the book changed. To go back
+   to one: Projects → Backups, then Import the file you want.
+──────────────────────────────────────── */
+const BACKUP_EVERY_MS = 10 * 60 * 1000;
+let backupTimer = null;
+let backupChain = Promise.resolve();
+let backupWarned = false;
+
+function scheduleBackup() {
+  if (!window.folioBackups || backupTimer) return;
+  backupTimer = setTimeout(() => { backupTimer = null; backupAllBooks(); }, BACKUP_EVERY_MS);
+}
+
+function backupAllBooks() {
+  if (!window.folioBackups) return Promise.resolve();
+  backupChain = backupChain.then(async () => {
+    try { saveProjectToArchive(); } catch (e) { /* back up what's archived */ }
+    for (const project of projectArchive()) {
+      try {
+        const payload = await buildProjectFilePayload(project.id, project);
+        if (!payload) continue;
+        await window.folioBackups.save({ id: project.id, title: project.title, text: JSON.stringify(payload) });
+      } catch (e) {
+        console.error(`Could not back up "${project.title}"`, e);
+        if (!backupWarned) {
+          backupWarned = true;
+          showFolioToast("Folio couldn't make its automatic backup. Your writing is still saved; check your Mac has free disk space.", { warning: true });
+        }
+      }
+    }
+  });
+  return backupChain;
+}
+
+/* ────────────────────────────────────────
    Project File Export / Import
    A project is packaged as a single .folio file (JSON under the hood) containing
    everything needed to reopen it on another device with no account or login: every
@@ -4820,7 +4882,7 @@ async function writeProjectFileNow(project) {
     reportSave('folder', true);
   } catch (e) {
     console.error('Could not write to synced folder', e);
-    reportSave('folder', false);
+    if (isFolderBlockedError(e)) reportFolderBlocked(); else reportSave('folder', false);
     // A save that fails partway leaves a "<name>.crswap" temp file behind unless aborted.
     if (writable) { try { await writable.abort(); } catch (abortError) { /* ignore */ } }
   }
@@ -5001,6 +5063,7 @@ async function scanSyncFolder() {
     }
   } catch (e) {
     console.error('Could not scan synced folder', e);
+    if (isFolderBlockedError(e)) reportFolderBlocked();
   }
 
   if (importedAny) renderProjects();
@@ -5111,6 +5174,9 @@ async function chooseSyncFolder() {
 
 async function reconnectSyncFolder() {
   if (!syncFolderHandle) return;
+  // In the desktop app, macOS gives the access back when you pick the folder
+  // yourself; the dialog opens on the current folder, so it's one click.
+  if (syncFolderHandle.native) { await chooseSyncFolder(); return; }
   const granted = await ensureSyncFolderPermission(syncFolderHandle, true);
   updateSyncFolderUI(!granted);
   if (granted) { ensureUniqueProjectId(); await scanSyncFolder(); }
@@ -5211,6 +5277,13 @@ async function pollSyncFolderForClaudeChanges() {
   try {
     if (!(await ensureSyncFolderPermission(syncFolderHandle, false))) return;
     for await (const entry of syncFolderHandle.values()) {
+      if (saveHealth.folderBlocked) {
+        // The folder can be read again, so access is back: write what piled up meanwhile.
+        saveHealth.folderBlocked = false;
+        updateSyncFolderUI();
+        delete lastAutoSyncedSignature[currentProjectId];
+        autoSyncCurrentProject();
+      }
       if (entry.kind !== 'file' || !entry.name.endsWith('.folio')) continue;
       const file = await entry.getFile();
       if (seenSyncFileTimes[entry.name] === file.lastModified) continue;
@@ -5223,6 +5296,7 @@ async function pollSyncFolderForClaudeChanges() {
     }
   } catch (e) {
     console.error('Could not check synced folder for Claude edits', e);
+    if (isFolderBlockedError(e)) reportFolderBlocked();
   } finally {
     syncPollBusy = false;
   }
@@ -5374,7 +5448,12 @@ async function applyClaudeChanges(data) {
   return true;
 }
 
-function showFolioToast(message, { sticky = false, warning = false } = {}) {
+function hideFolioToast(kind) {
+  const toast = document.getElementById('folio-toast');
+  if (toast && (!kind || toast.dataset.kind === kind)) toast.classList.remove('show');
+}
+
+function showFolioToast(message, { sticky = false, warning = false, kind = '' } = {}) {
   let toast = document.getElementById('folio-toast');
   if (!toast) {
     toast = document.createElement('div');
@@ -5383,6 +5462,7 @@ function showFolioToast(message, { sticky = false, warning = false } = {}) {
     document.body.appendChild(toast);
   }
   toast.textContent = message;
+  toast.dataset.kind = kind;
   toast.classList.toggle('warning', warning);
   if (sticky) { // stays until dismissed, so a save problem can't flash by unseen
     const close = document.createElement('button');
@@ -5865,6 +5945,11 @@ function setupEventListeners() {
   document.getElementById('btn-projects').addEventListener('click', openProjects);
   document.getElementById('new-project-btn').addEventListener('click', createProject);
   document.getElementById('import-project-btn').addEventListener('click', () => document.getElementById('import-project-input').click());
+  const backupsBtn = document.getElementById('show-backups-btn');
+  if (backupsBtn) {
+    backupsBtn.hidden = !window.folioBackups;
+    backupsBtn.addEventListener('click', () => window.folioBackups && window.folioBackups.show());
+  }
   document.getElementById('import-project-input').addEventListener('change', e => {
     const file = e.target.files[0];
     e.target.value = '';

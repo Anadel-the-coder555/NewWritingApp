@@ -6,6 +6,7 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { createSyncFolder } = require('./sync-folder');
+const { createBackups } = require('./backups');
 
 // For testing: FOLIO_USER_DATA=/some/folder npm start runs Folio with separate,
 // throwaway data instead of your real projects.
@@ -224,6 +225,22 @@ syncHandler('folio-sync:stat', name => syncFolder.stat(name));
 syncHandler('folio-sync:read', name => syncFolder.read(name));
 syncHandler('folio-sync:write', (name, text) => syncFolder.write(name, text));
 syncHandler('folio-sync:remove', name => syncFolder.remove(name));
+// ── Automatic backups ───────────────────────────────────────────
+// Dated copies of each book in Folio's data folder on this Mac (see backups.js).
+let backups = null;
+ipcMain.handle('folio-backup:save', (event, book) => {
+  try {
+    return backups.save(book);
+  } catch (error) {
+    logSyncError('folio-backup:save', book && book.title, error);
+    throw error;
+  }
+});
+ipcMain.handle('folio-backup:show', () => {
+  fs.mkdirSync(backups.root, { recursive: true });
+  return shell.openPath(backups.root);
+});
+
 ipcMain.handle('folio-sync:choose-folder', async (event) => {
   const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
     title: 'Choose the folder Folio saves your projects to',
@@ -294,6 +311,7 @@ ipcMain.handle('folio-image:fetch', async (event, url) => {
 
 app.whenReady().then(() => {
   syncFolder = createSyncFolder(path.join(app.getPath('userData'), 'sync-folder.json'));
+  backups = createBackups(path.join(app.getPath('userData'), 'Backups'));
 
   // When testing with `npm start`, show the Folio icon in the Dock too.
   // (The packaged Folio.app gets its icon from forge.config.js instead.)
