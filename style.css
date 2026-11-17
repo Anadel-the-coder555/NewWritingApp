@@ -2919,14 +2919,16 @@ html[data-bg] #editor-toolbar,
 html[data-bg] #beats-bar,
 html[data-bg] #sidebar,
 html[data-bg] #inspector {
-  backdrop-filter: blur(var(--bg-blur, 24px)) saturate(1.3);
-  border-color: color-mix(in srgb, var(--border) 45%, transparent);
+  /* Bars stay frosted and mostly solid even when the picture itself is sharp, so their
+     buttons and labels stay readable over light or busy photos. */
+  backdrop-filter: blur(max(var(--bg-blur, 24px), 20px)) saturate(1.3);
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
 }
-html[data-bg] #titlebar { background: color-mix(in srgb, var(--chrome) 55%, transparent); }
+html[data-bg] #titlebar { background: color-mix(in srgb, var(--chrome) 82%, transparent); }
 html[data-bg] #editor-toolbar,
-html[data-bg] #beats-bar { background: color-mix(in srgb, var(--toolbar) 42%, transparent); }
+html[data-bg] #beats-bar { background: color-mix(in srgb, var(--toolbar) 80%, transparent); }
 html[data-bg] #sidebar,
-html[data-bg] #inspector { background: color-mix(in srgb, var(--chrome) 62%, transparent); }
+html[data-bg] #inspector { background: color-mix(in srgb, var(--chrome) 84%, transparent); }
 html[data-bg] #editor-area,
 html[data-bg] #editor-scroll,
 html[data-bg] #corkboard,
