@@ -2545,7 +2545,21 @@ kbd { color: var(--text-faint); background: transparent; }
 /* ── Project shelf (home screen) ── */
 #projects-overlay { display: none; position: fixed; inset: 0; z-index: 700; flex-direction: column; background: var(--bg); color: var(--text); font-family: var(--font-body); }
 #projects-overlay.open { display: flex; }
-.projects-header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 14px 40px; border-bottom: 1px solid var(--border-light); background: var(--surface); }
+
+/* Background scenes: shuffled photos that cross-fade behind the shelf */
+#projects-overlay .scene { position: absolute; inset: 0; z-index: 0; overflow: hidden; background: var(--bg); pointer-events: none; }
+#projects-overlay .scene-img { position: absolute; inset: -2%; background: center / cover no-repeat; opacity: 0; transition: opacity 2.4s ease; animation: scene-drift 60s ease-in-out infinite alternate; }
+#projects-overlay .scene-img.show { opacity: 1; }
+#projects-overlay .scene::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--bg) 78%, transparent), color-mix(in srgb, var(--bg) 18%, transparent) 30%, color-mix(in srgb, var(--bg) 30%, transparent) 75%, color-mix(in srgb, var(--bg) 75%, transparent)); }
+#projects-overlay > :not(.scene) { position: relative; z-index: 1; }
+/* Frosted card over the photos so the shelf stays readable (same as the studio's welcome card) */
+#projects-overlay .projects-main { max-width: 1120px; margin: 40px auto; width: calc(100% - 80px); border-radius: 32px; background: color-mix(in srgb, var(--surface) 66%, transparent); -webkit-backdrop-filter: blur(16px) saturate(1.1); backdrop-filter: blur(16px) saturate(1.1); box-shadow: 0 24px 60px -30px color-mix(in srgb, var(--dark-1) 45%, transparent); }
+@media (max-width: 720px) { #projects-overlay .projects-main { width: calc(100% - 32px); margin: 16px auto; border-radius: 22px; } }
+@keyframes scene-drift { from { transform: scale(1); } to { transform: scale(1.06) translate(-1%, -1%); } }
+@media (prefers-reduced-motion: reduce) { #projects-overlay .scene-img { animation: none; } }
+
+.projects-header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 14px 40px; border-bottom: 1px solid var(--border-light); background: color-mix(in srgb, var(--surface) 55%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
 .projects-title { margin-right: auto; font-family: var(--font-heading); font-size: 26px; letter-spacing: -0.01em; color: var(--text); }
 .projects-sync-row { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 6px 0 12px; border-radius: 999px; background: var(--toolbar); font-size: 13px; color: var(--text-muted); }
 .sync-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--text-faint); opacity: .6; }

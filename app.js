@@ -4307,6 +4307,54 @@ async function exportFormattedBook() {
 
 function openProjects() { saveProjectToArchive(); renderProjects(); document.getElementById('projects-overlay').classList.add('open'); scanSyncFolder(); }
 
+// Background scenes on the projects shelf, borrowed from Qi Gong Routine Studio:
+// shuffled on every launch, then cross-fading from one to the next.
+const SHELF_SCENES = [
+  'img/backgrounds/lavender-coast.jpg',
+  'img/backgrounds/tuscan-villa.jpg',
+  'img/backgrounds/greecian-seaside.jpg',
+  'img/backgrounds/japanese-garden.jpg',
+  'img/backgrounds/cherry-blossom-coast.jpg',
+  'img/backgrounds/white-reindeer-forest.jpg',
+  'img/backgrounds/background2.jpeg',
+  'img/backgrounds/background3.jpeg',
+  'img/backgrounds/background4.jpg',
+  'img/backgrounds/background7-trimmed.jpg',
+  'img/backgrounds/background8.jpg',
+  'img/backgrounds/background18.jpeg',
+  'img/backgrounds/background19.jpeg',
+  'img/backgrounds/background21.jpeg',
+  'img/backgrounds/background22.jpeg'
+];
+const SHELF_SCENE_SECONDS = 45;
+
+function initShelfScene() {
+  const overlay = document.getElementById('projects-overlay');
+  const layers = overlay.querySelectorAll('.scene-img');
+  const order = [...SHELF_SCENES];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  let n = 0, front = 0;
+  const show = () => {
+    // Only change pictures while the shelf is open; it stays put while you write.
+    if (n > 0 && !overlay.classList.contains('open')) return;
+    const src = order[n % order.length];
+    const img = new Image();
+    img.onload = () => {
+      layers[front].style.backgroundImage = `url("${src}")`;
+      layers.forEach((layer, k) => layer.classList.toggle('show', k === front));
+      front = 1 - front;
+    };
+    img.src = src;
+    n++;
+  };
+  show();
+  if (order.length > 1) setInterval(show, SHELF_SCENE_SECONDS * 1000);
+}
+initShelfScene();
+
 // Muted cloth colours for projects that have no cover image yet. Each project
 // keeps the same colour every time, picked from a hash of its id.
 const SHELF_CLOTHS = ['#3d4a57', '#8a6b36', '#46543d', '#6b4552', '#4f5d6b', '#7a5a44'];
